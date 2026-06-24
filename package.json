@@ -1,0 +1,14 @@
+{
+  "name": "bacco-gerencial",
+  "version": "1.0.0",
+  "description": "Dashboard gerencial Bacco — Vendas e Ocupação",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "pdf-parse": "^1.1.1"
+  }
+}

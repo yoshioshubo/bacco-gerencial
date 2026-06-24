@@ -1,0 +1,399 @@
+process.env.TZ = 'America/Sao_Paulo';
+// Load .env if present (local dev)
+try { require('dotenv').config(); } catch(_) {}
+const express  = require('express');
+const fs       = require('fs');
+const path     = require('path');
+const https    = require('https');
+const pdfParse = require('pdf-parse');
+
+const app          = express();
+const DATA_DIR     = path.join(__dirname, 'data');
+const TOKENS_FILE  = path.join(DATA_DIR, 'tokens.json');
+const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
+const SHARED_DRIVE = process.env.SHARED_DRIVE_ID || '0AKZcsytstd78Uk9PVA';
+const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
+const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
+const PORT         = process.env.PORT || 3001;
+const BASE_URL     = process.env.BASE_URL || `http://localhost:${PORT}`;
+const REDIRECT_URI = `${BASE_URL}/auth/callback`;
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ── HTTP helper ───────────────────────────────────────────────────────────────
+function req(url, opts = {}, body = null) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const options = {
+      hostname: u.hostname, path: u.pathname + u.search,
+      method: opts.method || 'GET',
+      headers: { 'User-Agent': 'bacco-gerencial/1.0', ...opts.headers }
+    };
+    const r = https.request(options, res => {
+      if (res.statusCode === 301 || res.statusCode === 302)
+        return req(res.headers.location, opts).then(resolve).catch(reject);
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+      res.on('error', reject);
+    });
+    r.on('error', reject);
+    r.setTimeout(60000, () => { r.destroy(); reject(new Error('timeout')); });
+    if (body) r.write(body);
+    r.end();
+  });
+}
+
+// ── OAuth2 ────────────────────────────────────────────────────────────────────
+const loadTokens = () => { try { return JSON.parse(fs.readFileSync(TOKENS_FILE,'utf8')); } catch { return null; } };
+const saveTokens = t => fs.writeFileSync(TOKENS_FILE, JSON.stringify(t, null, 2));
+
+async function getToken() {
+  let t = loadTokens();
+  if (!t?.refresh_token) throw new Error('NÃO_AUTORIZADO');
+  if (!t.expiry || Date.now() > t.expiry - 60000) {
+    const body = new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET,
+      refresh_token: t.refresh_token, grant_type: 'refresh_token' }).toString();
+    const { status, body: rb } = await req('https://oauth2.googleapis.com/token',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, body);
+    const d = JSON.parse(rb.toString());
+    if (status !== 200) throw new Error('Token inválido: ' + (d.error_description || d.error));
+    t = { ...t, access_token: d.access_token, expiry: Date.now() + d.expires_in * 1000 };
+    saveTokens(t);
+  }
+  return t.access_token;
+}
+
+// ── Drive API ─────────────────────────────────────────────────────────────────
+async function driveGet(endpoint) {
+  const token = await getToken();
+  const sep = endpoint.includes('?') ? '&' : '?';
+  const url = `https://www.googleapis.com/drive/v3/${endpoint}${sep}supportsAllDrives=true&includeItemsFromAllDrives=true`;
+  const { status, body } = await req(url, { headers: { Authorization: `Bearer ${token}` } });
+  const data = JSON.parse(body.toString());
+  if (status >= 300) throw new Error(data.error?.message || `Drive API HTTP ${status}`);
+  return data;
+}
+
+async function findFolder(parentId, name) {
+  const q = encodeURIComponent(`'${parentId}' in parents and name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const d = await driveGet(`files?q=${q}&fields=files(id,name)&corpora=allDrives`);
+  return d.files?.[0] || null;
+}
+
+async function allPdfs(folderId) {
+  const q = encodeURIComponent(`'${folderId}' in parents and mimeType='application/pdf' and trashed=false`);
+  const d = await driveGet(`files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=name&corpora=allDrives`);
+  return d.files || [];
+}
+
+async function latestPdf(folderId) {
+  const files = await allPdfs(folderId);
+  return files.sort((a,b) => b.modifiedTime.localeCompare(a.modifiedTime))[0] || null;
+}
+
+const MESES_PT = ['JANEIRO','FEVEREIRO','MARÇO','MARCO','ABRIL','MAIO','JUNHO',
+                  'JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const MESES_NUM = { JANEIRO:1,FEVEREIRO:2,'MARÇO':3,MARCO:3,ABRIL:4,MAIO:5,JUNHO:6,
+                    JULHO:7,AGOSTO:8,SETEMBRO:9,OUTUBRO:10,NOVEMBRO:11,DEZEMBRO:12 };
+
+function mesKey(filename) {
+  const up = filename.toUpperCase().replace('.PDF','');
+  for (const m of MESES_PT) {
+    if (up.includes(m)) {
+      const yr = (up.match(/\d{4}/) || [''])[0];
+      const num = String(MESES_NUM[m]).padStart(2,'0');
+      return yr ? `${yr}-${num}` : null;
+    }
+  }
+  return null;
+}
+
+function mesLabel(key) {
+  const [yr, mo] = key.split('-');
+  const nomes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                 'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return `${nomes[parseInt(mo)]} ${yr}`;
+}
+
+async function downloadFile(fileId) {
+  const token = await getToken();
+  const { status, body } = await req(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (status !== 200) throw new Error(`Download falhou HTTP ${status}`);
+  return body;
+}
+
+// ── Parsers ───────────────────────────────────────────────────────────────────
+function parseVendas(text) {
+  const lines = text.split('\n');
+  let pdv = 'RESTAURANTE';
+  const notas = { RESTAURANTE: new Set(), 'Room Service': new Set() };
+  const daily = {};
+  let lastDate = null;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    // PDV header — "PDV:RESTAURANTE" or "PDV: Room Service" (space optional)
+    if (/^PDV:\s*(RESTAURANTE|Room Service)$/.test(line)) {
+      pdv = line.replace(/^PDV:\s*/, '').trim(); continue;
+    }
+    const dm = line.match(/^(\d{2}\/\d{2}\/\d{4})/);
+    if (dm) lastDate = dm[1];
+    // Nota fiscal: 5-6 digits at end of line, no space required before
+    const nm = line.match(/(\d{5,6})\s*$/);
+    if (nm && lastDate && !line.startsWith('TOTAL')) notas[pdv]?.add(nm[1]);
+    if (line.startsWith('TOTAL DO DIA:') && lastDate) {
+      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace('.','').replace(',','.')));
+      if (nums.length >= 5) {
+        const tp = nums[nums.length - 2];
+        if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
+        daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
+      }
+    }
+  }
+  // Grand total line: "R$ 85.020,08R$ 7.689,55R$ 77.330,53R$ 5.445,11R$ 82.775,64" (5 values concatenated)
+  const brl = s => parseFloat(s.replace(/\./g,'').replace(',','.'));
+  const gm = text.match(/R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})\s*\n?Emitido/);
+  const grand = gm ? { valorBruto: brl(gm[1]), desconto: brl(gm[2]), valorLiquido: brl(gm[3]), taxa: brl(gm[4]), totalPago: brl(gm[5]) } : null;
+  return { daily, notas: { RESTAURANTE: notas.RESTAURANTE.size, 'Room Service': notas['Room Service'].size }, grand };
+}
+
+function parseOcupacao(text) {
+  const lines = text.split('\n');
+  const daily = {};
+  let currentDate = null;
+  let prevLine = '';
+  let total = 0;
+  let receitaTotal = 0;
+  for (const raw of lines) {
+    const line = raw.trim();
+    // "Data Lançamento" is alone, next non-empty line is the date
+    if (/^Data\s+Lan/i.test(line)) { currentDate = null; prevLine = 'HEADER'; continue; }
+    if (prevLine === 'HEADER' && /^\d{2}\/\d{2}\/\d{4}$/.test(line)) {
+      currentDate = line; prevLine = ''; continue;
+    }
+    // Summary line before "Total por Data:" — format: "1.320,006600" → valor(R$) + ADs + 00
+    if (line === 'Total por Data:' && currentDate && prevLine) {
+      const m = prevLine.match(/^([\d.]+,\d{2})(\d+?)00$/);
+      if (m) {
+        const ad  = parseInt(m[2]);
+        const brl = parseFloat(m[1].replace(/\./g,'').replace(',','.'));
+        daily[currentDate] = { hospedes: ad, receita: brl };
+        total      += ad;
+        receitaTotal += brl;
+      }
+      currentDate = null;
+    }
+    if (line) prevLine = line;
+  }
+  return { daily, total, receitaTotal };
+}
+
+// ── Sincronização ─────────────────────────────────────────────────────────────
+function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao) {
+  const totalRST  = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
+  const totalRS   = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
+  const totalPago = vendas.grand?.totalPago || (totalRST + totalRS);
+  const clientes  = vendas.notas.RESTAURANTE + vendas.notas['Room Service'];
+  const hospedes  = ocupacao.total;
+
+  const allDates = [...new Set([...Object.keys(vendas.daily), ...Object.keys(ocupacao.daily)])].sort();
+  const serie = allDates.map(d => ({
+    data:        d,
+    restaurante: vendas.daily[d]?.RESTAURANTE || 0,
+    roomService: vendas.daily[d]?.['Room Service'] || 0,
+    totalDia:   (vendas.daily[d]?.RESTAURANTE || 0) + (vendas.daily[d]?.['Room Service'] || 0),
+    hospedes:    ocupacao.daily[d]?.hospedes || 0,
+    receitaCafe: ocupacao.daily[d]?.receita  || 0
+  }));
+
+  const clientesCafe    = hospedes;
+  const receitaCafe     = +ocupacao.receitaTotal.toFixed(2);
+  const clientesEventos = 0;
+  const receitaEventos  = 0;
+  const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
+  const totalClientes   = clientes + clientesCafe + clientesEventos;
+  const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
+  const ticketEventos   = clientesEventos > 0 ? +(receitaEventos / clientesEventos).toFixed(2) : 0;
+  const ticketGeral     = totalClientes   > 0 ? +(totalGeral     / totalClientes).toFixed(2)   : 0;
+  const kpiCobertura    = hospedes > 0 ? clientes / hospedes : 0;
+
+  return {
+    arquivoVendas:        vendaPdf?.name || '',
+    arquivoOcupacao:      ocupPdf?.name  || '',
+    periodo:              allDates.length ? `${allDates[0]} a ${allDates[allDates.length-1]}` : '',
+    diasComDados:         allDates.length,
+    // Faturamento por canal
+    faturamentoRST:       +totalRST.toFixed(2),
+    faturamentoRS:        +totalRS.toFixed(2),
+    receitaCafe,
+    receitaEventos,
+    faturamentoTotal:     totalGeral,
+    // Clientes por canal
+    clientesBacco:        vendas.notas.RESTAURANTE,
+    clientesRoomService:  vendas.notas['Room Service'],
+    clientesCafe,
+    clientesEventos,
+    clientesTotal:        totalClientes,
+    // Tickets por canal
+    ticketRST:            vendas.notas.RESTAURANTE > 0 ? +(totalRST/vendas.notas.RESTAURANTE).toFixed(2) : 0,
+    ticketRS:             vendas.notas['Room Service'] > 0 ? +(totalRS/vendas.notas['Room Service']).toFixed(2) : 0,
+    ticketCafe,
+    ticketEventos,
+    ticketGeral,
+    // Legado / resumo financeiro
+    hospedes,
+    ticketMedio:          ticketGeral,
+    valorBruto:           vendas.grand?.valorBruto  || 0,
+    desconto:             vendas.grand?.desconto     || 0,
+    valorLiquido:         vendas.grand?.valorLiquido || 0,
+    taxaServico:          vendas.grand?.taxa         || 0,
+    kpiCobertura:         +kpiCobertura.toFixed(3),
+    serie
+  };
+}
+
+async function sincronizar() {
+  const [vendaDir, ocupDir] = await Promise.all([
+    findFolder(SHARED_DRIVE, 'VENDAS'),
+    findFolder(SHARED_DRIVE, 'OCUPAÇÃO')
+  ]);
+  if (!vendaDir) throw new Error('Pasta VENDAS não encontrada no Drive compartilhado.');
+  if (!ocupDir)  throw new Error('Pasta OCUPAÇÃO não encontrada no Drive compartilhado.');
+
+  const [vendaPdfs, ocupPdfs] = await Promise.all([
+    allPdfs(vendaDir.id),
+    allPdfs(ocupDir.id)
+  ]);
+
+  // Group by mes key derived from filename
+  const vendaMap = {};
+  for (const f of vendaPdfs) { const k = mesKey(f.name); if (k) vendaMap[k] = f; }
+  const ocupMap  = {};
+  for (const f of ocupPdfs)  { const k = mesKey(f.name); if (k) ocupMap[k]  = f; }
+
+  const meses = [...new Set([...Object.keys(vendaMap), ...Object.keys(ocupMap)])].sort().reverse();
+  if (!meses.length) throw new Error('Nenhum PDF encontrado nas pastas VENDAS / OCUPAÇÃO.');
+
+  const dados = {};
+  for (const mes of meses) {
+    const vf = vendaMap[mes];
+    const of = ocupMap[mes];
+    const [vBuf, oBuf] = await Promise.all([
+      vf ? downloadFile(vf.id) : Promise.resolve(null),
+      of ? downloadFile(of.id) : Promise.resolve(null)
+    ]);
+    const [vText, oText] = await Promise.all([
+      vBuf ? pdfParse(vBuf).then(r => r.text) : Promise.resolve(''),
+      oBuf ? pdfParse(oBuf).then(r => r.text) : Promise.resolve('')
+    ]);
+    const vendas   = parseVendas(vText);
+    const ocupacao = parseOcupacao(oText);
+    dados[mes] = buildMesData(vf, of, vendas, ocupacao);
+  }
+
+  const result = { sincAt: new Date().toISOString(), meses, dados };
+  fs.writeFileSync(RESULT_FILE, JSON.stringify(result, null, 2));
+  return result;
+}
+
+// ── Debug ─────────────────────────────────────────────────────────────────────
+app.get('/api/debug-texto', async (req, res) => {
+  try {
+    const [vendaDir, ocupDir] = await Promise.all([
+      findFolder(SHARED_DRIVE, 'VENDAS'),
+      findFolder(SHARED_DRIVE, 'OCUPAÇÃO')
+    ]);
+    const [vendaPdf, ocupPdf] = await Promise.all([
+      latestPdf(vendaDir.id),
+      latestPdf(ocupDir.id)
+    ]);
+    const [vendaBuf, ocupBuf] = await Promise.all([
+      downloadFile(vendaPdf.id),
+      downloadFile(ocupPdf.id)
+    ]);
+    const [vendaText, ocupText] = await Promise.all([
+      pdfParse(vendaBuf).then(r => r.text),
+      pdfParse(ocupBuf).then(r => r.text)
+    ]);
+    res.json({
+      vendas_inicio: vendaText.substring(0, 1500),
+      vendas_fim: vendaText.substring(Math.max(0, vendaText.length - 2000)),
+      ocupacao: ocupText.substring(0, 2000)
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Rotas ─────────────────────────────────────────────────────────────────────
+app.get('/api/dados', (req, res) => {
+  if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
+  const store = JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8'));
+  // Legacy format (single month) — serve flat fields directly
+  if (!store.meses) return res.json({ sincAt: store.sincAt, meses: [], mesSelecionado: null, mesLabel: 'Período atual', ...store });
+  const mes = req.query.mes || store.meses[0];
+  const d   = store.dados[mes];
+  if (!d) return res.status(404).json({ error: `Mês ${mes} não encontrado.` });
+  res.json({ sincAt: store.sincAt, meses: store.meses, mesSelecionado: mes, mesLabel: mesLabel(mes), ...d });
+});
+
+app.post('/api/sincronizar', async (req, res) => {
+  try {
+    const data = await sincronizar();
+    res.json({ ok: true, data });
+  } catch (e) {
+    console.error('[Sync]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/auth/google', (req, res) => {
+  if (!CLIENT_ID) return res.status(500).send('GOOGLE_CLIENT_ID não configurado.');
+  const p = new URLSearchParams({
+    client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
+    response_type: 'code', scope: 'https://www.googleapis.com/auth/drive.readonly',
+    access_type: 'offline', prompt: 'consent'
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p}`);
+});
+
+app.get('/auth/callback', async (req2, res) => {
+  const { code, error } = req2.query;
+  if (error) return res.send(`<h2>Erro: ${error}</h2>`);
+  try {
+    const body = new URLSearchParams({
+      client_id: CLIENT_ID, client_secret: CLIENT_SECRET,
+      code, redirect_uri: REDIRECT_URI, grant_type: 'authorization_code'
+    }).toString();
+    const { status, body: rb } = await req('https://oauth2.googleapis.com/token',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, body);
+    const tokens = JSON.parse(rb.toString());
+    if (status !== 200) throw new Error(tokens.error_description || tokens.error);
+    tokens.expiry = Date.now() + tokens.expires_in * 1000;
+    saveTokens(tokens);
+    res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+      <h2 style="color:#1D9E75">✓ Google Drive autorizado!</h2>
+      <p>Redirecionando...</p>
+      <script>setTimeout(()=>location.href='/',1500)</script>
+    </body></html>`);
+  } catch (e) {
+    res.status(500).send(`<h2>Erro: ${e.message}</h2>`);
+  }
+});
+
+app.get('/auth/status', (req, res) => {
+  const t = loadTokens();
+  res.json({ autorizado: !!(t?.refresh_token), temClientId: !!CLIENT_ID });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('\n========================================');
+  console.log('  BACCO — Dashboard Gerencial');
+  console.log(`  http://localhost:${PORT}`);
+  console.log('========================================\n');
+});

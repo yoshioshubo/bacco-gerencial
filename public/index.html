@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bacco — Painel Gerencial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:#f4f4f2; --surface:#fff; --border:rgba(0,0,0,.09); --text:#1a1a18;
+    --muted:#6b6b67; --hint:#a0a09c; --green:#1D9E75; --green-bg:#E1F5EE;
+    --green-dk:#085041; --green-md:#0F6E56; --blue:#378ADD; --blue-bg:#E6F1FB;
+    --blue-dk:#0C447C; --amber-bg:#FAEEDA; --amber:#854F0B; --amber-dk:#633806;
+    --red:#A32D2D; --r:12px;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{ --bg:#111110; --surface:#1c1c1a; --border:rgba(255,255,255,.1);
+      --text:#f0f0ee; --muted:#a0a09c; --hint:#6e6e6a;
+      --green-bg:#0a2e22; --green-dk:#9FE1CB; --green-md:#5DCAA5;
+      --blue-bg:#0c1e30; --blue-dk:#85B7EB; --amber-bg:#2a1e08; }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+  /* ── Nav ── */
+  nav{background:var(--surface);border-bottom:.5px solid var(--border);height:52px;display:flex;align-items:center;padding:0 1.5rem;gap:1rem}
+  .logo{font-size:15px;font-weight:600;color:var(--text)}
+  .logo span{color:var(--green)}
+  .nav-title{font-size:13px;color:var(--muted);margin-left:4px}
+  .sync-area{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .sync-btn{font-size:12px;padding:6px 14px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px}
+  .sync-btn:hover{background:var(--bg)}
+  .sync-btn:disabled{opacity:.5;pointer-events:none}
+  .sync-time{font-size:11px;color:var(--hint)}
+  .auth-btn{font-size:12px;padding:6px 14px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer}
+  .auth-btn:hover{opacity:.9}
+
+  /* ── Layout ── */
+  .main{max-width:1080px;margin:0 auto;padding:1.5rem}
+  .ph{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem}
+  .ph h1{font-size:20px;font-weight:500}
+  .ph p{font-size:13px;color:var(--muted);margin-top:3px}
+  .badge{font-size:11px;padding:3px 10px;border-radius:6px;background:var(--green-bg);color:var(--green-dk)}
+
+  /* ── KPI cards ── */
+  .kpi-section{margin-bottom:1rem}
+  .kpi-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;padding-left:2px}
+  .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  @media(max-width:900px){.kpi-row{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--surface);border:.5px solid var(--border);border-radius:10px;padding:14px 16px}
+  .kpi.g{background:var(--green-bg);border-color:transparent}
+  .kpi.b{background:var(--blue-bg);border-color:transparent}
+  .kpi.a{background:var(--amber-bg);border-color:transparent}
+  .kpi.tot{border-width:1px;border-style:solid}
+  .kpi.tot.g{border-color:rgba(29,158,117,.35)}
+  .kpi.tot.b{border-color:rgba(55,138,221,.35)}
+  .kpi.tot.a{border-color:rgba(133,79,11,.25)}
+  .kl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .kpi.g .kl{color:var(--green-md)} .kpi.b .kl{color:#185FA5} .kpi.a .kl{color:var(--amber)}
+  .kv{font-size:20px;font-weight:500;color:var(--text);line-height:1}
+  .kpi.g .kv{color:var(--green-dk)} .kpi.b .kv{color:var(--blue-dk)} .kpi.a .kv{color:var(--amber-dk)}
+  .ks{font-size:11px;color:var(--hint);margin-top:4px}
+  .kpi.g .ks{color:var(--green)} .kpi.b .ks{color:var(--blue)}
+
+  /* ── KPI banner ── */
+  .banner{background:var(--green-bg);border:.5px solid rgba(29,158,117,.2);border-radius:var(--r);padding:1rem 1.5rem;display:flex;align-items:center;gap:1.25rem;margin-bottom:1.25rem}
+  .banner-num{font-size:40px;font-weight:500;color:var(--green-dk);min-width:80px}
+  .banner-desc h3{font-size:14px;font-weight:500;color:var(--green-md);margin-bottom:4px}
+  .banner-desc p{font-size:13px;color:var(--green);line-height:1.55}
+
+  /* ── Cards ── */
+  .row2{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:1.25rem}
+  .row3{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:640px){.row2,.row3{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:1rem 1.25rem}
+  .ct{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+  .leg{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+  .leg span{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px}
+  .dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+
+  /* ── Tabela resumo ── */
+  .ftbl{width:100%;border-collapse:collapse;font-size:13px}
+  .ftbl tr{border-bottom:.5px solid var(--border)}
+  .ftbl tr:last-child{border-bottom:none;font-weight:500}
+  .ftbl td{padding:7px 0} .ftbl td:last-child{text-align:right}
+  .lbl{color:var(--muted)} .pos{color:var(--green)} .neg{color:var(--red)} .big{color:var(--green-dk);font-size:14px}
+
+  /* ── Mix ── */
+  .mix{display:flex;align-items:center;gap:1.25rem}
+  .mix-leg{flex:1}
+  .mi{margin-bottom:10px}
+  .mi .n{font-size:12px;color:var(--muted);margin-bottom:2px}
+  .mi .v{font-size:15px;font-weight:500}
+  .mi .p{font-size:11px}
+
+  /* ── Estados ── */
+  .empty{text-align:center;padding:4rem 1rem;color:var(--muted)}
+  .empty h3{font-size:16px;font-weight:500;margin-bottom:.5rem;color:var(--text)}
+  .empty p{font-size:13px;line-height:1.6;max-width:360px;margin:.5rem auto 1.5rem}
+  .primary{font-size:13px;padding:9px 20px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer;font-weight:500}
+  .primary:hover{opacity:.9}
+  .err{background:#FCEBEB;border:.5px solid #F7C1C1;border-radius:8px;padding:.75rem 1rem;font-size:13px;color:var(--red);margin-bottom:1rem;display:none}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Bacco <span>·</span></div>
+  <span class="nav-title">Painel Gerencial</span>
+  <div class="sync-area">
+    <select id="mesSel" style="font-size:12px;padding:5px 10px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;display:none" onchange="trocarMes()"></select>
+    <button class="sync-btn" id="syncBtn" onclick="sincronizar()">
+      <span id="syncIco">↻</span> Sincronizar Drive
+    </button>
+    <span class="sync-time" id="syncTime"></span>
+    <button class="auth-btn" id="authBtn" style="display:none" onclick="location.href='/auth/google'">
+      Conectar Google
+    </button>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="err" id="err"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+const R = (n,d=0) => n==null?'—':Number(n).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const BRL = n => 'R$ '+R(n,2);
+const PCT = p => R(p*100,1)+'%';
+
+let charts = {};
+function killCharts(){ Object.values(charts).forEach(c=>c?.destroy()); charts={}; }
+
+function showErr(msg){
+  const el=document.getElementById('err');
+  el.textContent='⚠ '+msg; el.style.display='block';
+  setTimeout(()=>el.style.display='none',8000);
+}
+
+async function checkAuth(){
+  try{
+    const r=await fetch('/auth/status'); const d=await r.json();
+    document.getElementById('authBtn').style.display=d.autorizado?'none':'inline-block';
+  }catch{}
+}
+
+let mesSelecionado = null;
+
+async function sincronizar(){
+  const status=await fetch('/auth/status').then(r=>r.json()).catch(()=>({}));
+  if(!status.autorizado){ location.href='/auth/google'; return; }
+  const btn=document.getElementById('syncBtn');
+  const ico=document.getElementById('syncIco');
+  btn.disabled=true; ico.innerHTML='<span class="spin"></span>';
+  try{
+    const r=await fetch('/api/sincronizar',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error);
+    await carregar();
+  }catch(e){
+    if(e.message==='NÃO_AUTORIZADO'){ location.href='/auth/google'; return; }
+    showErr(e.message);
+  }
+  finally{ btn.disabled=false; ico.textContent='↻'; }
+}
+
+async function trocarMes(){
+  mesSelecionado = document.getElementById('mesSel').value;
+  await carregar();
+}
+
+async function carregar(){
+  checkAuth();
+  try{
+    const qs = mesSelecionado ? `?mes=${mesSelecionado}` : '';
+    const r=await fetch('/api/dados'+qs);
+    if(r.status===404){ renderVazio(); return; }
+    const d=await r.json();
+    if(d.error){ renderVazio(); return; }
+    // Populate month selector
+    if(d.meses && d.meses.length > 1){
+      const sel=document.getElementById('mesSel');
+      sel.style.display='block';
+      const current=d.mesSelecionado || d.meses[0];
+      sel.innerHTML=d.meses.map(m=>`<option value="${m}"${m===current?' selected':''}>${mesLabel(m)}</option>`).join('');
+    }
+    render(d);
+  }catch{ renderVazio(); }
+}
+
+function mesLabel(key){
+  const [yr,mo]=key.split('-');
+  const nomes=['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return `${nomes[parseInt(mo)]} ${yr}`;
+}
+
+function renderVazio(){
+  document.getElementById('content').innerHTML=`
+    <div class="empty">
+      <div style="font-size:48px;margin-bottom:1rem">📊</div>
+      <h3>Nenhum dado carregado</h3>
+      <p>Clique em <strong>Sincronizar Drive</strong> para buscar automaticamente os arquivos de Vendas e Ocupação.</p>
+      <button class="primary" onclick="sincronizar()">↻ Sincronizar agora</button>
+    </div>`;
+}
+
+function render(d){
+  killCharts();
+  if(d.sincAt){
+    const ts=new Date(d.sincAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    document.getElementById('syncTime').textContent='Atualizado '+ts;
+  }
+  const rstPct = d.faturamentoTotal>0 ? d.faturamentoRST/d.faturamentoTotal : 0;
+  const rsPct  = d.faturamentoTotal>0 ? d.faturamentoRS/d.faturamentoTotal  : 0;
+  const hosped_media = d.diasComDados>0 ? R(d.hospedes/d.diasComDados,1) : '—';
+  const ratio = d.kpiCobertura>0 ? Math.round(1/d.kpiCobertura) : '?';
+
+  document.getElementById('content').innerHTML=`
+    <div class="ph">
+      <div>
+        <h1>${d.mesLabel || 'Painel gerencial'}</h1>
+        <p>${d.periodo||''} &nbsp;·&nbsp; ${d.diasComDados} dias &nbsp;·&nbsp; ${d.arquivoVendas||''}</p>
+      </div>
+      <span class="badge">✓ Dados reais</span>
+    </div>
+
+    <div class="kpi-section">
+      <div class="kpi-section-label">Faturamento</div>
+      <div class="kpi-row">
+        <div class="kpi g"><div class="kl">Restaurante</div><div class="kv">${BRL(d.faturamentoRST)}</div><div class="ks">vendas no período</div></div>
+        <div class="kpi g"><div class="kl">Room Service</div><div class="kv">${BRL(d.faturamentoRS)}</div><div class="ks">vendas no período</div></div>
+        <div class="kpi g"><div class="kl">Café da Manhã</div><div class="kv">${BRL(d.receitaCafe)}</div><div class="ks">receita hospedagem</div></div>
+        <div class="kpi g"><div class="kl">Eventos</div><div class="kv">${BRL(d.receitaEventos)}</div><div class="ks">sem dados</div></div>
+        <div class="kpi g tot"><div class="kl">Total</div><div class="kv">${BRL(d.faturamentoTotal)}</div><div class="ks">RST + RS + Café + Eventos</div></div>
+      </div>
+    </div>
+
+    <div class="kpi-section">
+      <div class="kpi-section-label">Clientes</div>
+      <div class="kpi-row">
+        <div class="kpi b"><div class="kl">Restaurante</div><div class="kv">${R(d.clientesBacco)}</div><div class="ks">comandas abertas</div></div>
+        <div class="kpi b"><div class="kl">Room Service</div><div class="kv">${R(d.clientesRoomService)}</div><div class="ks">comandas abertas</div></div>
+        <div class="kpi b"><div class="kl">Café da Manhã</div><div class="kv">${R(d.clientesCafe)}</div><div class="ks">hóspedes · média ${hosped_media}/dia</div></div>
+        <div class="kpi b"><div class="kl">Eventos</div><div class="kv">${R(d.clientesEventos)}</div><div class="ks">sem dados</div></div>
+        <div class="kpi b tot"><div class="kl">Total</div><div class="kv">${R(d.clientesTotal)}</div><div class="ks">RST + RS + Café + Eventos</div></div>
+      </div>
+    </div>
+
+    <div class="kpi-section">
+      <div class="kpi-section-label">Ticket Médio</div>
+      <div class="kpi-row">
+        <div class="kpi a"><div class="kl">Restaurante</div><div class="kv">${BRL(d.ticketRST)}</div><div class="ks">por comanda</div></div>
+        <div class="kpi a"><div class="kl">Room Service</div><div class="kv">${BRL(d.ticketRS)}</div><div class="ks">por comanda</div></div>
+        <div class="kpi a"><div class="kl">Café da Manhã</div><div class="kv">${BRL(d.ticketCafe)}</div><div class="ks">por hóspede</div></div>
+        <div class="kpi a"><div class="kl">Eventos</div><div class="kv">${d.clientesEventos>0?BRL(d.ticketEventos):'—'}</div><div class="ks">sem dados</div></div>
+        <div class="kpi a tot"><div class="kl">Total</div><div class="kv">${BRL(d.ticketGeral)}</div><div class="ks">ticket geral</div></div>
+      </div>
+    </div>
+
+    <div class="banner">
+      <div class="banner-num">${PCT(d.kpiCobertura)}</div>
+      <div class="banner-desc">
+        <h3>KPI — Vendas por Hóspede</h3>
+        <p>${R(d.clientesTotal)} vendas ÷ ${R(d.hospedes)} hóspedes = <strong>${PCT(d.kpiCobertura)}</strong></p>
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="card">
+        <div class="ct">Faturamento diário — total pago (R$)</div>
+        <div class="leg">
+          <span><span class="dot" style="background:#1D9E75"></span>Restaurante</span>
+          <span><span class="dot" style="background:#85B7EB"></span>Room Service</span>
+        </div>
+        <div style="position:relative;height:200px"><canvas id="cDia" role="img" aria-label="Faturamento diário por canal"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="ct">Hóspedes vs clientes F&B</div>
+        <div class="leg">
+          <span><span class="dot" style="background:#85B7EB"></span>Hóspedes</span>
+          <span><span class="dot" style="background:#1D9E75"></span>Clientes</span>
+        </div>
+        <div style="position:relative;height:200px"><canvas id="cOcup" role="img" aria-label="Hóspedes vs clientes por dia"></canvas></div>
+      </div>
+    </div>
+
+    <div class="row3">
+      <div class="card">
+        <div class="ct">Mix de receita</div>
+        <div class="mix">
+          <div style="position:relative;height:130px;width:130px;flex-shrink:0"><canvas id="cPie" role="img" aria-label="Mix receita"></canvas></div>
+          <div class="mix-leg">
+            <div class="mi"><div class="n">Restaurante</div><div class="v">${BRL(d.faturamentoRST)}</div><div class="p" style="color:#1D9E75">${PCT(rstPct)} · ${R(d.clientesBacco)} clientes</div></div>
+            <div class="mi"><div class="n">Room Service</div><div class="v">${BRL(d.faturamentoRS)}</div><div class="p" style="color:#378ADD">${PCT(rsPct)} · ${R(d.clientesRoomService)} clientes</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ct">Resumo financeiro</div>
+        <table class="ftbl">
+          <tr><td class="lbl">Valor bruto</td><td>${BRL(d.valorBruto)}</td></tr>
+          <tr><td class="lbl">Descontos</td><td class="neg">– ${BRL(d.desconto)}</td></tr>
+          <tr><td class="lbl">Valor líquido</td><td>${BRL(d.valorLiquido)}</td></tr>
+          <tr><td class="lbl">Taxa de serviço</td><td class="pos">+ ${BRL(d.taxaServico)}</td></tr>
+          <tr><td class="lbl">Ticket RST</td><td>${BRL(d.ticketRST)}</td></tr>
+          <tr><td class="lbl">Ticket RS</td><td>${BRL(d.ticketRS)}</td></tr>
+          <tr><td>Total pago</td><td class="big">${BRL(d.faturamentoTotal)}</td></tr>
+        </table>
+      </div>
+    </div>`;
+
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  const tc=dark?'rgba(255,255,255,.45)':'rgba(0,0,0,.4)';
+  const gc=dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.05)';
+  const lbs=d.serie.map(s=>s.data.slice(0,5));
+
+  charts.dia=new Chart(document.getElementById('cDia'),{
+    type:'bar',
+    data:{labels:lbs,datasets:[
+      {label:'Restaurante',data:d.serie.map(s=>s.restaurante),backgroundColor:'#1D9E75',borderRadius:2,stack:'s'},
+      {label:'Room Service',data:d.serie.map(s=>s.roomService),backgroundColor:'#85B7EB',borderRadius:2,stack:'s'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:45,autoSkip:false}},
+              y:{stacked:true,grid:{color:gc},border:{display:false},ticks:{color:tc,font:{size:10},callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v}}}}
+  });
+
+  charts.ocup=new Chart(document.getElementById('cOcup'),{
+    type:'line',
+    data:{labels:lbs,datasets:[
+      {label:'Hóspedes',data:d.serie.map(s=>s.hospedes),borderColor:'#85B7EB',backgroundColor:'rgba(133,183,235,.12)',fill:true,tension:.3,pointRadius:2,borderWidth:2},
+      {label:'Clientes',data:d.serie.map(s=>d.ticketMedio>0?Math.round(s.totalDia/d.ticketMedio):0),borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,.08)',fill:true,tension:.3,pointRadius:2,borderWidth:2,borderDash:[4,3]}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:45,autoSkip:false}},
+              y:{grid:{color:gc},border:{display:false},beginAtZero:true,ticks:{color:tc,font:{size:10}}}}}
+  });
+
+  charts.pie=new Chart(document.getElementById('cPie'),{
+    type:'doughnut',
+    data:{labels:['Restaurante','Room Service'],datasets:[{data:[d.faturamentoRST,d.faturamentoRS],backgroundColor:['#1D9E75','#85B7EB'],borderWidth:0,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}
+  });
+}
+
+carregar();
+</script>
+</body>
+</html>
