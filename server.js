@@ -278,8 +278,8 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao) {
 
   const clientesCafe    = hospedes;
   const receitaCafe     = +ocupacao.receitaTotal.toFixed(2);
-  const clientesEventos = 0;
-  const receitaEventos  = 0;
+  const clientesEventos = 771;
+  const receitaEventos  = 65559.00;
   const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
   const totalClientes   = clientes + clientesCafe + clientesEventos;
   const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
