@@ -119,6 +119,8 @@
     <button class="auth-btn" id="authBtn" style="display:none" onclick="location.href='/auth/google'">
       Conectar Google
     </button>
+    <span id="userLabel" style="font-size:12px;color:var(--muted)"></span>
+    <a href="/logout" style="font-size:12px;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:6px;border:.5px solid var(--border)">Sair</a>
   </div>
 </nav>
 
@@ -145,6 +147,7 @@ async function checkAuth(){
   try{
     const r=await fetch('/auth/status'); const d=await r.json();
     document.getElementById('authBtn').style.display=d.autorizado?'none':'inline-block';
+    if(d.usuario) document.getElementById('userLabel').textContent=d.usuario;
   }catch{}
 }
 

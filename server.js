@@ -1,27 +1,90 @@
 process.env.TZ = 'America/Sao_Paulo';
-// Load .env if present (local dev)
 try { require('dotenv').config(); } catch(_) {}
 const express  = require('express');
 const fs       = require('fs');
 const path     = require('path');
 const https    = require('https');
+const crypto   = require('crypto');
+const session  = require('express-session');
 const pdfParse = require('pdf-parse');
 
 const app          = express();
 const DATA_DIR     = path.join(__dirname, 'data');
 const TOKENS_FILE  = path.join(DATA_DIR, 'tokens.json');
 const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
+const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const SHARED_DRIVE = process.env.SHARED_DRIVE_ID || '0AKZcsytstd78Uk9PVA';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
 const PORT         = process.env.PORT || 3001;
 const BASE_URL     = process.env.BASE_URL || `http://localhost:${PORT}`;
 const REDIRECT_URI = `${BASE_URL}/auth/callback`;
+const SESSION_SECRET = process.env.SESSION_SECRET || 'bacco-gerencial-secret-2026';
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// ── Usuários ──────────────────────────────────────────────────────────────────
+function hashPwd(pwd) { return crypto.createHash('sha256').update(pwd + 'bacco-salt').digest('hex'); }
+
+function loadUsers() {
+  if (!fs.existsSync(USERS_FILE)) {
+    const defaults = {
+      andrea: { displayName: 'Andrea', password: hashPwd('1234'), mustChange: true },
+      yoshio: { displayName: 'Yoshio', password: hashPwd('1234'), mustChange: true }
+    };
+    fs.writeFileSync(USERS_FILE, JSON.stringify(defaults, null, 2));
+    return defaults;
+  }
+  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+}
+
+function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
+
+// ── Sessão e middleware ───────────────────────────────────────────────────────
+app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false,
+  cookie: { maxAge: 8 * 60 * 60 * 1000 } }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+const PUBLIC_PATHS = ['/login', '/login.html', '/trocar-senha', '/trocar-senha.html'];
+app.use((req, res, next) => {
+  const isPublic = PUBLIC_PATHS.some(p => req.path.startsWith(p)) || req.path.startsWith('/auth/');
+  if (!req.session?.user && !isPublic) return res.redirect('/login');
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Rotas de autenticação de usuário ─────────────────────────────────────────
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+app.get('/trocar-senha', (req, res) => res.sendFile(path.join(__dirname, 'public', 'trocar-senha.html')));
+
+app.post('/login', (req, res) => {
+  const { usuario, senha } = req.body;
+  const users = loadUsers();
+  const user = users[usuario?.toLowerCase()];
+  if (!user || user.password !== hashPwd(senha)) {
+    return res.redirect('/login?erro=1');
+  }
+  req.session.user = { id: usuario.toLowerCase(), name: user.displayName, mustChange: user.mustChange };
+  if (user.mustChange) return res.redirect('/trocar-senha');
+  res.redirect('/');
+});
+
+app.post('/trocar-senha', (req, res) => {
+  if (!req.session?.user) return res.redirect('/login');
+  const { nova, confirma } = req.body;
+  if (!nova || nova.length < 6) return res.redirect('/trocar-senha?erro=curta');
+  if (nova !== confirma)        return res.redirect('/trocar-senha?erro=naoconfere');
+  const users = loadUsers();
+  users[req.session.user.id].password   = hashPwd(nova);
+  users[req.session.user.id].mustChange = false;
+  saveUsers(users);
+  req.session.user.mustChange = false;
+  res.redirect('/');
+});
+
+app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/login'); });
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 function req(url, opts = {}, body = null) {
@@ -388,7 +451,7 @@ app.get('/auth/callback', async (req2, res) => {
 
 app.get('/auth/status', (req, res) => {
   const t = loadTokens();
-  res.json({ autorizado: !!(t?.refresh_token), temClientId: !!CLIENT_ID });
+  res.json({ autorizado: !!(t?.refresh_token), temClientId: !!CLIENT_ID, usuario: req.session?.user?.name || '' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
