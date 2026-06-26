@@ -280,20 +280,25 @@ function parseEventos(buffer) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
 
     // Encontra a linha de cabeçalho procurando por "PAX"
-    let hRow = -1, cPax = -1, cBanq = -1, cForma = -1;
+    let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, cSala = -1, cEquip = -1;
     for (let i = 0; i < Math.min(15, rows.length); i++) {
       const r = rows[i].map(c => String(c).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim());
       const pi = r.findIndex(c => c.includes('PAX'));
       if (pi >= 0) {
         hRow  = i; cPax  = pi;
         cBanq = r.findIndex(c => c.startsWith('BAN'));
+        cSala = r.findIndex(c => c.startsWith('SAL'));
+        cEquip= r.findIndex(c => c.startsWith('EQUI'));
         cForma= r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
         break;
       }
     }
     if (hRow < 0 || cBanq < 0) continue;
 
-    let totalPax = 0, totalBanq = 0;
+    const parseVal = v => typeof v === 'number' ? v
+      : (parseFloat(String(v).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
+
+    let totalPax = 0, totalBanq = 0, totalSala = 0, totalEquip = 0;
     for (let i = hRow + 1; i < rows.length; i++) {
       const row     = rows[i];
       const evento  = String(row[0] || '').trim();
@@ -309,13 +314,13 @@ function parseEventos(buffer) {
       if (!pax || isNaN(pax) || pax <= 0) continue;
       if (forma.includes('BACCO')) continue;
 
-      const banq = typeof banqRaw === 'number'
-        ? banqRaw
-        : (parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
       totalPax  += pax;
-      totalBanq += banq;
+      totalBanq += parseVal(banqRaw);
+      if (cSala  >= 0) totalSala  += parseVal(row[cSala]);
+      if (cEquip >= 0) totalEquip += parseVal(row[cEquip]);
     }
-    result[mesKey] = { pax: totalPax, banq: +totalBanq.toFixed(2) };
+    const total = +(totalSala + totalEquip + totalBanq).toFixed(2);
+    result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total };
   }
   return result;
 }
@@ -350,8 +355,11 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
 
   const clientesCafe    = hospedes;
   const receitaCafe     = +ocupacao.receitaTotal.toFixed(2);
-  const clientesEventos = eventosmes?.pax  || 0;
-  const receitaEventos  = eventosmes?.banq || 0;
+  const clientesEventos = eventosmes?.pax   || 0;
+  const eventosSala     = eventosmes?.sala  || 0;
+  const eventosEquip    = eventosmes?.equip || 0;
+  const eventosBanq     = eventosmes?.banq  || 0;
+  const receitaEventos  = eventosmes?.total || eventosBanq;
   const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
   const totalClientes   = clientes + clientesCafe + clientesEventos;
   const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
@@ -369,6 +377,9 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
     faturamentoRS:        +totalRS.toFixed(2),
     receitaCafe,
     receitaEventos,
+    eventosSala,
+    eventosEquip,
+    eventosBanq,
     faturamentoTotal:     totalGeral,
     // Clientes por canal
     clientesBacco:        vendas.notas.RESTAURANTE,

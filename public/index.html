@@ -71,7 +71,8 @@
 
   /* ── Cards ── */
   .row2{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:1.25rem}
-  .row3{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  @media(max-width:900px){.row3{grid-template-columns:1fr 1fr}}
   @media(max-width:640px){.row2,.row3{grid-template-columns:1fr}}
   .card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:1rem 1.25rem}
   .ct{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
@@ -313,9 +314,16 @@ function render(d){
           <tr><td class="lbl">Descontos</td><td class="neg">– ${BRL(d.desconto)}</td></tr>
           <tr><td class="lbl">Valor líquido</td><td>${BRL(d.valorLiquido)}</td></tr>
           <tr><td class="lbl">Taxa de serviço</td><td class="pos">+ ${BRL(d.taxaServico)}</td></tr>
-          <tr><td class="lbl">Ticket RST</td><td>${BRL(d.ticketRST)}</td></tr>
-          <tr><td class="lbl">Ticket RS</td><td>${BRL(d.ticketRS)}</td></tr>
-          <tr><td>Total pago</td><td class="big">${BRL(d.faturamentoTotal)}</td></tr>
+          <tr><td>Total pago</td><td class="big">${BRL(+(d.valorLiquido+d.taxaServico).toFixed(2))}</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="ct">Resumo eventos</div>
+        <table class="ftbl">
+          <tr><td class="lbl">Sala</td><td>${BRL(d.eventosSala)}</td></tr>
+          <tr><td class="lbl">Equipamentos</td><td>${BRL(d.eventosEquip)}</td></tr>
+          <tr><td class="lbl">Banquete</td><td>${BRL(d.eventosBanq)}</td></tr>
+          <tr><td>Total</td><td class="big">${BRL(d.receitaEventos)}</td></tr>
         </table>
       </div>
     </div>`;
