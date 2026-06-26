@@ -312,6 +312,7 @@ function render(d){
         <table class="ftbl">
           <tr><td class="lbl">Valor bruto</td><td>${BRL(d.valorBruto)}</td></tr>
           <tr><td class="lbl">Taxa de serviço</td><td class="pos">+ ${BRL(d.taxaServico)}</td></tr>
+          <tr><td class="lbl">Venda bruta</td><td>${BRL(+(d.valorBruto+d.taxaServico).toFixed(2))}</td></tr>
           <tr><td class="lbl">Descontos</td><td class="neg">– ${BRL(d.desconto)}</td></tr>
           <tr><td>Total líquido</td><td class="big">${BRL(+(d.valorBruto+d.taxaServico-d.desconto).toFixed(2))}</td></tr>
         </table>
