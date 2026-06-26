@@ -200,9 +200,9 @@ function parseVendas(text) {
   let pdv = 'RESTAURANTE';
   const notas = { RESTAURANTE: new Set(), 'Room Service': new Set() };
   const daily = {};
-  // Acumula bruto+taxa por PDV (separado do totalPago)
   const brutoTaxa = { RESTAURANTE: 0, 'Room Service': 0 };
   let lastDate = null;
+  let grand = null;
 
   for (const raw of lines) {
     const line = raw.trim();
@@ -213,23 +213,37 @@ function parseVendas(text) {
     if (dm) lastDate = dm[1];
     const nm = line.match(/(\d{5,6})\s*$/);
     if (nm && lastDate && !line.startsWith('TOTAL')) notas[pdv]?.add(nm[1]);
+
     if (line.startsWith('TOTAL DO DIA:') && lastDate) {
       // Estrutura c/ QTD decimal: QTD | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (7 vals)
       // Estrutura c/ QTD inteiro (RS): BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (6 vals)
       // bruto + taxa = totalPago + desconto (identidade matemática, independe do formato)
       const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
       if (nums.length >= 5) {
-        const tp       = nums[nums.length - 2];          // TOTAL PAGO (sempre penúltimo)
-        const desconto = nums.length >= 7 ? nums[2]      // 7 vals: idx 2 = DESCONTO
-                       : nums.length >= 6 ? nums[1]      // 6 vals: idx 1 = DESCONTO
+        const tp       = nums[nums.length - 2];
+        const desconto = nums.length >= 7 ? nums[2]
+                       : nums.length >= 6 ? nums[1]
                        : 0;
         if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
         daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
-        brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + tp + desconto;  // = bruto + taxa
+        brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + tp + desconto;
+      }
+    } else if (line.startsWith('TOTAL:')) {
+      // Totalizador geral (última página): QTD | CUSTO | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL_PAGO
+      // Captura a última ocorrência (grand total final do arquivo)
+      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+      if (nums.length >= 7) {
+        grand = {
+          valorBruto:   nums[2],
+          desconto:     nums[3],
+          valorLiquido: nums[4],
+          taxaServico:  nums[5],
+          totalPago:    nums[6]
+        };
       }
     }
   }
-  return { daily, notas: { RESTAURANTE: notas.RESTAURANTE.size, 'Room Service': notas['Room Service'].size }, brutoTaxa };
+  return { daily, notas: { RESTAURANTE: notas.RESTAURANTE.size, 'Room Service': notas['Room Service'].size }, brutoTaxa, grand };
 }
 
 function parseOcupacao(text) {
@@ -399,7 +413,7 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
     valorBruto:           vendas.grand?.valorBruto  || 0,
     desconto:             vendas.grand?.desconto     || 0,
     valorLiquido:         vendas.grand?.valorLiquido || 0,
-    taxaServico:          vendas.grand?.taxa         || 0,
+    taxaServico:          vendas.grand?.taxaServico   || 0,
     kpiCobertura:         +kpiCobertura.toFixed(3),
     serie
   };
