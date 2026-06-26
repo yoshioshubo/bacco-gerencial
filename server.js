@@ -554,14 +554,15 @@ app.get('/api/debug-eventos', async (req, res) => {
       const key = SHEET_MES[sheetName.toUpperCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'')];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
 
-      let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, headerCells = [];
+      let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, cDataDbg = -1, headerCells = [];
       for (let i = 0; i < Math.min(15, rows.length); i++) {
         const r = rows[i].map(c => String(c).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim());
         const pi = r.findIndex(c => c.includes('PAX'));
         if (pi >= 0) {
           hRow = i; cPax = pi;
-          cBanq  = r.findIndex(c => c.startsWith('BAN'));
-          cForma = r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
+          cBanq    = r.findIndex(c => c.startsWith('BAN'));
+          cForma   = r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
+          cDataDbg = r.findIndex(c => c === 'DATA' || c === 'DT' || c.startsWith('DATA'));
           headerCells = r;
           break;
         }
@@ -586,13 +587,14 @@ app.get('/api/debug-eventos', async (req, res) => {
           : (parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
         sumPax  += pax;
         sumBanq += banq;
-        linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma] });
+        const dataRaw = cDataDbg >= 0 ? row[cDataDbg] : undefined;
+        linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma], dataRaw, dataTipo: typeof dataRaw });
       }
 
       out.abas.push({
         nome: sheetName, mesKey: key || '(não mapeado)',
         headerLinha: hRow, headerCelulas: headerCells,
-        colunas: { PAX: cPax, BAN: cBanq, FORMA: cForma },
+        colunas: { PAX: cPax, BAN: cBanq, FORMA: cForma, DATA: cDataDbg },
         totalLinhas: rows.length,
         RESULTADO: { totalPax: sumPax, totalBanq: +sumBanq.toFixed(2), linhasContadas: linhasComputadas.length },
         linhasComputadas
