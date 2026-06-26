@@ -160,13 +160,31 @@ async function latestPdf(folderId) {
   return files.sort((a,b) => b.modifiedTime.localeCompare(a.modifiedTime))[0] || null;
 }
 
-const MESES_PT = ['JANEIRO','FEVEREIRO','MARÇO','MARCO','ABRIL','MAIO','JUNHO',
-                  'JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
-const MESES_NUM = { JANEIRO:1,FEVEREIRO:2,'MARÇO':3,MARCO:3,ABRIL:4,MAIO:5,JUNHO:6,
-                    JULHO:7,AGOSTO:8,SETEMBRO:9,OUTUBRO:10,NOVEMBRO:11,DEZEMBRO:12 };
+// Nomes completos primeiro (para evitar que "MAI" case em "MAIO" antes de "MAR" em "MARÇO")
+const MESES_PT = [
+  'JANEIRO','FEVEREIRO','MARÇO','MARCO','ABRIL','MAIO','JUNHO',
+  'JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO',
+  // Abreviações (verificadas depois dos nomes completos)
+  'JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'
+];
+const MESES_NUM = {
+  JANEIRO:1, JAN:1,
+  FEVEREIRO:2, FEV:2,
+  'MARÇO':3, MARCO:3, MAR:3,
+  ABRIL:4, ABR:4,
+  MAIO:5, MAI:5,
+  JUNHO:6, JUN:6,
+  JULHO:7, JUL:7,
+  AGOSTO:8, AGO:8,
+  SETEMBRO:9, SET:9,
+  OUTUBRO:10, OUT:10,
+  NOVEMBRO:11, NOV:11,
+  DEZEMBRO:12, DEZ:12
+};
 
 function mesKey(filename) {
-  const up = filename.toUpperCase().replace('.PDF','');
+  // Normaliza: remove acentos, extensão, espaços
+  const up = filename.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\.(PDF|XLSX?)$/,'');
   for (const m of MESES_PT) {
     if (up.includes(m)) {
       const yr = (up.match(/\d{4}/) || [''])[0];
