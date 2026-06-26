@@ -362,6 +362,10 @@ function render(d){
     }
   };
 
+  // Calcula média diária (total geral / dias)
+  const mediaTotal = d.faturamentoTotal / (d.diasComDados || 1);
+  const mediaArr   = d.serie.map(() => +mediaTotal.toFixed(2));
+
   charts.dia=new Chart(document.getElementById('cDia'),{
     type:'bar',
     plugins:[domingoPlugin],
@@ -369,10 +373,12 @@ function render(d){
       {label:'Restaurante', data:d.serie.map(s=>s.restaurante||0), backgroundColor:'#1D9E75', borderRadius:2, stack:'s'},
       {label:'Room Service',data:d.serie.map(s=>s.roomService||0), backgroundColor:'#85B7EB', borderRadius:2, stack:'s'},
       {label:'Café da Manhã',data:d.serie.map(s=>s.cafe||s.receitaCafe||0), backgroundColor:'#9B72CF', borderRadius:2, stack:'s'},
-      {label:'Eventos',     data:d.serie.map(s=>s.eventos||0),    backgroundColor:'#C97A2B', borderRadius:2, stack:'s'}
+      {label:'Eventos',     data:d.serie.map(s=>s.eventos||0),    backgroundColor:'#C97A2B', borderRadius:2, stack:'s'},
+      {label:'Média diária',data:mediaArr, type:'line', borderColor:'#A32D2D', borderDash:[6,4], borderWidth:1.5,
+       pointRadius:0, fill:false, tension:0, order:0}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{stacked:true,grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:45,autoSkip:false}},
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:dark?'rgba(255,255,255,.7)':'rgba(0,0,0,.65)',font:{size:10,weight:'500'},maxRotation:45,autoSkip:false}},
               y:{stacked:true,grid:{color:gc},border:{display:false},ticks:{color:tc,font:{size:10},callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v}}}}
   });
 
