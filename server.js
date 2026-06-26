@@ -399,7 +399,7 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
   const ticketEventos   = clientesEventos > 0 ? +(receitaEventos / clientesEventos).toFixed(2) : 0;
   const ticketGeral     = totalClientes   > 0 ? +(totalGeral     / totalClientes).toFixed(2)   : 0;
-  const kpiCobertura    = hospedes > 0 ? clientes / hospedes : 0;
+  const kpiCobertura    = hospedes > 0 ? vendas.notas['Room Service'] / hospedes : 0;
 
   return {
     arquivoVendas:        vendaPdf?.name || '',
