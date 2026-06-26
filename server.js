@@ -204,7 +204,8 @@ function parseVendas(text) {
   let lastDate = null;
   let grand = null;
 
-  for (const raw of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
     const line = raw.trim();
     if (/^PDV:\s*(RESTAURANTE|Room Service)$/.test(line)) {
       pdv = line.replace(/^PDV:\s*/, '').trim(); continue;
@@ -228,10 +229,11 @@ function parseVendas(text) {
         daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
         brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + tp + desconto;
       }
-    } else if (line.startsWith('TOTAL:')) {
-      // Totalizador geral (última página): QTD | CUSTO | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL_PAGO
-      // Captura a última ocorrência (grand total final do arquivo)
-      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+    } else if (line.startsWith('TOTAL:') && !line.startsWith('TOTAL DO')) {
+      // Totalizador geral: linha pode estar quebrada em múltiplas linhas no PDF
+      // Junta as próximas 5 linhas para capturar todos os valores
+      const bloco = lines.slice(i, i + 6).join(' ');
+      const nums = [...bloco.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
       if (nums.length >= 7) {
         grand = {
           valorBruto:   nums[2],
