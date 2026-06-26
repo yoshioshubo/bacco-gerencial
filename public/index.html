@@ -219,6 +219,7 @@ function render(d){
   }
   const rstPct  = d.faturamentoTotal>0 ? d.faturamentoRST/d.faturamentoTotal    : 0;
   const rsPct   = d.faturamentoTotal>0 ? d.faturamentoRS/d.faturamentoTotal     : 0;
+  const cafePct = d.faturamentoTotal>0 ? d.receitaCafe/d.faturamentoTotal       : 0;
   const evtPct  = d.faturamentoTotal>0 ? d.receitaEventos/d.faturamentoTotal    : 0;
   const hosped_media = d.diasComDados>0 ? R(d.hospedes/d.diasComDados,1) : '—';
   const ratio = d.kpiCobertura>0 ? Math.round(1/d.kpiCobertura) : '?';
@@ -300,6 +301,7 @@ function render(d){
           <div class="mix-leg">
             <div class="mi"><div class="n">Restaurante</div><div class="v">${BRL(d.faturamentoRST)}</div><div class="p" style="color:#1D9E75">${PCT(rstPct)} · ${R(d.clientesBacco)} clientes</div></div>
             <div class="mi"><div class="n">Room Service</div><div class="v">${BRL(d.faturamentoRS)}</div><div class="p" style="color:#378ADD">${PCT(rsPct)} · ${R(d.clientesRoomService)} clientes</div></div>
+            <div class="mi"><div class="n">Café da Manhã</div><div class="v">${BRL(d.receitaCafe)}</div><div class="p" style="color:#6B4FA0">${PCT(cafePct)} · ${R(d.clientesCafe)} hóspedes</div></div>
             <div class="mi"><div class="n">Eventos</div><div class="v">${BRL(d.receitaEventos)}</div><div class="p" style="color:#854F0B">${PCT(evtPct)} · ${R(d.clientesEventos)} PAX</div></div>
           </div>
         </div>
@@ -347,7 +349,7 @@ function render(d){
 
   charts.pie=new Chart(document.getElementById('cPie'),{
     type:'doughnut',
-    data:{labels:['Restaurante','Room Service','Eventos'],datasets:[{data:[d.faturamentoRST,d.faturamentoRS,d.receitaEventos],backgroundColor:['#1D9E75','#85B7EB','#C97A2B'],borderWidth:0,hoverOffset:4}]},
+    data:{labels:['Restaurante','Room Service','Café da Manhã','Eventos'],datasets:[{data:[d.faturamentoRST,d.faturamentoRS,d.receitaCafe,d.receitaEventos],backgroundColor:['#1D9E75','#85B7EB','#9B72CF','#C97A2B'],borderWidth:0,hoverOffset:4}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}
   });
 }
