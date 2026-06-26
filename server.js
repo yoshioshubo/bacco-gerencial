@@ -214,19 +214,18 @@ function parseVendas(text) {
     const nm = line.match(/(\d{5,6})\s*$/);
     if (nm && lastDate && !line.startsWith('TOTAL')) notas[pdv]?.add(nm[1]);
     if (line.startsWith('TOTAL DO DIA:') && lastDate) {
-      // Estrutura: QTD | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL_PAGO | CUSTO (7 valores)
+      // Estrutura c/ QTD decimal: QTD | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (7 vals)
+      // Estrutura c/ QTD inteiro (RS): BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (6 vals)
+      // bruto + taxa = totalPago + desconto (identidade matemática, independe do formato)
       const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
-      if (nums.length >= 7) {
-        const tp   = nums[5];   // TOTAL PAGO
-        const bruto= nums[1];   // VALOR BRUTO
-        const taxa = nums[4];   // TAXA DE SERVIÇO
+      if (nums.length >= 5) {
+        const tp       = nums[nums.length - 2];          // TOTAL PAGO (sempre penúltimo)
+        const desconto = nums.length >= 7 ? nums[2]      // 7 vals: idx 2 = DESCONTO
+                       : nums.length >= 6 ? nums[1]      // 6 vals: idx 1 = DESCONTO
+                       : 0;
         if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
         daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
-        brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + bruto + taxa;
-      } else if (nums.length >= 5) {
-        const tp = nums[nums.length - 2];
-        if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
-        daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
+        brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + tp + desconto;  // = bruto + taxa
       }
     }
   }
