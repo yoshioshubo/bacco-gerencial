@@ -436,6 +436,56 @@ async function sincronizar() {
   return result;
 }
 
+// ── Debug Eventos ─────────────────────────────────────────────────────────────
+app.get('/api/debug-eventos', async (req, res) => {
+  try {
+    const xlsxFile = await findEventosXlsx();
+    if (!xlsxFile) return res.json({ erro: 'Arquivo xlsx não encontrado na pasta.' });
+    const buf = await downloadFile(xlsxFile.id);
+    const wb  = XLSX.read(buf, { type: 'buffer' });
+    const out  = { arquivo: xlsxFile.name, abas: [] };
+
+    for (const sheetName of wb.SheetNames) {
+      const key = SHEET_MES[sheetName.toUpperCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'')];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+
+      let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, headerCells = [];
+      for (let i = 0; i < Math.min(15, rows.length); i++) {
+        const r = rows[i].map(c => String(c).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim());
+        const pi = r.findIndex(c => c.includes('PAX'));
+        if (pi >= 0) {
+          hRow = i; cPax = pi;
+          cBanq  = r.findIndex(c => c.startsWith('BAN'));
+          cForma = r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
+          headerCells = r;
+          break;
+        }
+      }
+
+      // Primeiras 10 linhas de dados com valores brutos
+      const amostra = [];
+      for (let i = Math.max(0,hRow+1); i < Math.min(rows.length, hRow+11); i++) {
+        const row = rows[i];
+        amostra.push({
+          idx: i,
+          paxCol: cPax >= 0 ? row[cPax] : 'N/A',
+          banqCol: cBanq >= 0 ? row[cBanq] : 'N/A',
+          formaCol: cForma >= 0 ? row[cForma] : 'N/A',
+          rowBruta: row.slice(0, 12)
+        });
+      }
+
+      out.abas.push({
+        nome: sheetName, mesKey: key || '(não mapeado)',
+        headerLinha: hRow, headerCelulas: headerCells,
+        colunas: { PAX: cPax, BAN: cBanq, FORMA: cForma },
+        totalLinhas: rows.length, amostra
+      });
+    }
+    res.json(out);
+  } catch(e) { res.status(500).json({ erro: e.message }); }
+});
+
 // ── Debug ─────────────────────────────────────────────────────────────────────
 app.get('/api/debug-texto', async (req, res) => {
   try {
