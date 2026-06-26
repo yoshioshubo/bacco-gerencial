@@ -413,7 +413,8 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
     valorBruto:           vendas.grand?.valorBruto  || 0,
     desconto:             vendas.grand?.desconto     || 0,
     valorLiquido:         vendas.grand?.valorLiquido || 0,
-    taxaServico:          vendas.grand?.taxaServico   || 0,
+    taxaServico:          vendas.grand?.taxaServico  || 0,
+    _debugGrand:          vendas.grand || null,
     kpiCobertura:         +kpiCobertura.toFixed(3),
     serie
   };
@@ -553,9 +554,12 @@ app.get('/api/debug-texto', async (req, res) => {
       pdfParse(vendaBuf).then(r => r.text),
       pdfParse(ocupBuf).then(r => r.text)
     ]);
+    const linhasTotal = vendaText.split('\n').filter(l => l.trim().startsWith('TOTAL'));
     res.json({
       vendas_inicio: vendaText.substring(0, 1500),
       vendas_fim: vendaText.substring(Math.max(0, vendaText.length - 2000)),
+      linhas_TOTAL: linhasTotal.slice(-20),
+      grand_parsed: parseVendas(vendaText).grand,
       ocupacao: ocupText.substring(0, 2000)
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
