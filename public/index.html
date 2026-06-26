@@ -363,18 +363,58 @@ function render(d){
   };
 
   // Calcula média diária (total geral / dias)
-  const mediaTotal = d.faturamentoTotal / (d.diasComDados || 1);
-  const mediaArr   = d.serie.map(() => +mediaTotal.toFixed(2));
+  const mediaVal = d.faturamentoTotal / (d.diasComDados || 1);
+  const mediaArr = d.serie.map(() => +mediaVal.toFixed(2));
+
+  // Plugin: linha de média tracejada com valor no centro
+  const mediaPlugin = {
+    id: 'mediaLinha',
+    afterDraw(chart) {
+      const ds = chart.data.datasets.find(x => x.label === 'Média diária');
+      if (!ds) return;
+      const idx = chart.data.datasets.indexOf(ds);
+      const meta = chart.getDatasetMeta(idx);
+      if (!meta || !meta.data.length) return;
+      const { ctx, chartArea: { left, right } } = chart;
+      const yVal = ds.data[0];
+      const yPx  = chart.scales.y.getPixelForValue(yVal);
+      const midX = (left + right) / 2;
+
+      ctx.save();
+      // Linha tracejada
+      ctx.beginPath();
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = '#A32D2D';
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(left, yPx);
+      ctx.lineTo(right, yPx);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Etiqueta com valor no centro da linha
+      const label = 'Média ' + BRL(Math.round(yVal));
+      const pad = 6;
+      ctx.font = 'bold 10px sans-serif';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(midX - tw/2 - pad, yPx - 9, tw + pad*2, 16);
+      ctx.fillStyle = '#A32D2D';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, midX, yPx);
+      ctx.restore();
+    }
+  };
 
   charts.dia=new Chart(document.getElementById('cDia'),{
     type:'bar',
-    plugins:[domingoPlugin],
+    plugins:[domingoPlugin, mediaPlugin],
     data:{labels:lbs,datasets:[
-      {label:'Restaurante', data:d.serie.map(s=>s.restaurante||0), backgroundColor:'#1D9E75', borderRadius:2, stack:'s'},
-      {label:'Room Service',data:d.serie.map(s=>s.roomService||0), backgroundColor:'#85B7EB', borderRadius:2, stack:'s'},
-      {label:'Café da Manhã',data:d.serie.map(s=>s.cafe||s.receitaCafe||0), backgroundColor:'#9B72CF', borderRadius:2, stack:'s'},
-      {label:'Eventos',     data:d.serie.map(s=>s.eventos||0),    backgroundColor:'#C97A2B', borderRadius:2, stack:'s'},
-      {label:'Média diária',data:mediaArr, type:'line', borderColor:'#A32D2D', borderDash:[6,4], borderWidth:1.5,
+      {label:'Restaurante',  data:d.serie.map(s=>s.restaurante||0),           backgroundColor:'#1D9E75', borderRadius:2, stack:'s', order:1},
+      {label:'Room Service', data:d.serie.map(s=>s.roomService||0),           backgroundColor:'#85B7EB', borderRadius:2, stack:'s', order:1},
+      {label:'Café da Manhã',data:d.serie.map(s=>s.cafe||s.receitaCafe||0),  backgroundColor:'#9B72CF', borderRadius:2, stack:'s', order:1},
+      {label:'Eventos',      data:d.serie.map(s=>s.eventos||0),               backgroundColor:'#C97A2B', borderRadius:2, stack:'s', order:1},
+      {label:'Média diária', data:mediaArr, type:'line', borderColor:'transparent',
        pointRadius:0, fill:false, tension:0, order:0}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
