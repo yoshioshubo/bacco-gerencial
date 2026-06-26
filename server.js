@@ -314,7 +314,7 @@ function parseEventos(buffer) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
 
     // Encontra a linha de cabeçalho procurando por "PAX"
-    let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, cSala = -1, cEquip = -1;
+    let hRow = -1, cPax = -1, cBanq = -1, cForma = -1, cSala = -1, cEquip = -1, cData = -1;
     for (let i = 0; i < Math.min(15, rows.length); i++) {
       const r = rows[i].map(c => String(c).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim());
       const pi = r.findIndex(c => c.includes('PAX'));
@@ -324,6 +324,7 @@ function parseEventos(buffer) {
         cSala = r.findIndex(c => c.startsWith('SAL'));
         cEquip= r.findIndex(c => c.startsWith('EQUI'));
         cForma= r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
+        cData = r.findIndex(c => c === 'DATA' || c === 'DT' || c.startsWith('DATA'));
         break;
       }
     }
@@ -332,7 +333,29 @@ function parseEventos(buffer) {
     const parseVal = v => typeof v === 'number' ? v
       : (parseFloat(String(v).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
 
+    // Converte valor de data Excel (serial ou string) para dd/mm/yyyy
+    const parseDateCell = v => {
+      if (!v) return null;
+      if (typeof v === 'number') {
+        // Serial Excel → JS Date
+        const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+        const dd = String(d.getUTCDate()).padStart(2,'0');
+        const mm = String(d.getUTCMonth()+1).padStart(2,'0');
+        const yyyy = d.getUTCFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+      }
+      const s = String(v).trim();
+      // Já no formato dd/mm/yyyy ou dd/mm/yy
+      if (/^\d{2}\/\d{2}\/\d{2,4}$/.test(s)) {
+        const parts = s.split('/');
+        if (parts[2].length === 2) parts[2] = '20' + parts[2];
+        return parts.join('/');
+      }
+      return null;
+    };
+
     let totalPax = 0, totalBanq = 0, totalSala = 0, totalEquip = 0;
+    const daily = {};
     for (let i = hRow + 1; i < rows.length; i++) {
       const row     = rows[i];
       const evento  = String(row[0] || '').trim();
@@ -348,13 +371,29 @@ function parseEventos(buffer) {
       if (!pax || isNaN(pax) || pax <= 0) continue;
       if (forma.includes('BACCO')) continue;
 
+      const banq  = parseVal(banqRaw);
+      const sala  = cSala  >= 0 ? parseVal(row[cSala])  : 0;
+      const equip = cEquip >= 0 ? parseVal(row[cEquip]) : 0;
+      const rowTotal = +(sala + equip + banq).toFixed(2);
+
       totalPax  += pax;
-      totalBanq += parseVal(banqRaw);
-      if (cSala  >= 0) totalSala  += parseVal(row[cSala]);
-      if (cEquip >= 0) totalEquip += parseVal(row[cEquip]);
+      totalBanq += banq;
+      totalSala += sala;
+      totalEquip+= equip;
+
+      // Acumula por data se coluna DATA disponível
+      const dateKey = cData >= 0 ? parseDateCell(row[cData]) : null;
+      if (dateKey) {
+        if (!daily[dateKey]) daily[dateKey] = { pax:0, sala:0, equip:0, banq:0, total:0 };
+        daily[dateKey].pax   += pax;
+        daily[dateKey].sala  += sala;
+        daily[dateKey].equip += equip;
+        daily[dateKey].banq  += banq;
+        daily[dateKey].total += rowTotal;
+      }
     }
     const total = +(totalSala + totalEquip + totalBanq).toFixed(2);
-    result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total };
+    result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total, daily };
   }
   return result;
 }
@@ -378,14 +417,18 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const hospedes  = ocupacao.total;
 
   const allDates = [...new Set([...Object.keys(vendas.daily), ...Object.keys(ocupacao.daily)])].sort();
-  // Eventos distribuídos igualmente pelos dias do período (não há breakdown diário)
-  const eventosDiario = allDates.length > 0 ? +(receitaEventos / allDates.length).toFixed(2) : 0;
+  // Usa breakdown diário de eventos se disponível; caso contrário distribui igualmente
+  const eventosDailyMap = eventosmes?.daily || {};
+  const temDailyEventos = Object.keys(eventosDailyMap).length > 0;
+  const eventosDiarioFallback = (!temDailyEventos && allDates.length > 0)
+    ? +(receitaEventos / allDates.length).toFixed(2) : 0;
+
   const serie = allDates.map(d => ({
     data:        d,
     restaurante: vendas.daily[d]?.RESTAURANTE || 0,
     roomService: vendas.daily[d]?.['Room Service'] || 0,
     cafe:        ocupacao.daily[d]?.receita  || 0,
-    eventos:     eventosDiario,
+    eventos:     temDailyEventos ? (eventosDailyMap[d]?.total || 0) : eventosDiarioFallback,
     totalDia:   (vendas.daily[d]?.RESTAURANTE || 0) + (vendas.daily[d]?.['Room Service'] || 0),
     hospedes:    ocupacao.daily[d]?.hospedes || 0,
     receitaCafe: ocupacao.daily[d]?.receita  || 0
