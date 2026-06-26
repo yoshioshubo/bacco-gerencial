@@ -306,7 +306,9 @@ function parseEventos(buffer) {
       if (!pax || isNaN(pax) || pax <= 0) continue;
       if (forma.includes('BACCO')) continue;
 
-      const banq = parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+      const banq = typeof banqRaw === 'number'
+        ? banqRaw
+        : (parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
       totalPax  += pax;
       totalBanq += banq;
     }
@@ -480,7 +482,9 @@ app.get('/api/debug-eventos', async (req, res) => {
         const pax = parseInt(paxRaw);
         if (!pax || isNaN(pax) || pax <= 0) continue;
         if (forma.includes('BACCO')) continue;
-        const banq = parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+        const banq = typeof banqRaw === 'number'
+          ? banqRaw
+          : (parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
         sumPax  += pax;
         sumBanq += banq;
         linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma] });
