@@ -200,33 +200,37 @@ function parseVendas(text) {
   let pdv = 'RESTAURANTE';
   const notas = { RESTAURANTE: new Set(), 'Room Service': new Set() };
   const daily = {};
+  // Acumula bruto+taxa por PDV (separado do totalPago)
+  const brutoTaxa = { RESTAURANTE: 0, 'Room Service': 0 };
   let lastDate = null;
 
   for (const raw of lines) {
     const line = raw.trim();
-    // PDV header — "PDV:RESTAURANTE" or "PDV: Room Service" (space optional)
     if (/^PDV:\s*(RESTAURANTE|Room Service)$/.test(line)) {
       pdv = line.replace(/^PDV:\s*/, '').trim(); continue;
     }
     const dm = line.match(/^(\d{2}\/\d{2}\/\d{4})/);
     if (dm) lastDate = dm[1];
-    // Nota fiscal: 5-6 digits at end of line, no space required before
     const nm = line.match(/(\d{5,6})\s*$/);
     if (nm && lastDate && !line.startsWith('TOTAL')) notas[pdv]?.add(nm[1]);
     if (line.startsWith('TOTAL DO DIA:') && lastDate) {
-      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace('.','').replace(',','.')));
-      if (nums.length >= 5) {
+      // Estrutura: QTD | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL_PAGO | CUSTO (7 valores)
+      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+      if (nums.length >= 7) {
+        const tp   = nums[5];   // TOTAL PAGO
+        const bruto= nums[1];   // VALOR BRUTO
+        const taxa = nums[4];   // TAXA DE SERVIÇO
+        if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
+        daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
+        brutoTaxa[pdv] = (brutoTaxa[pdv] || 0) + bruto + taxa;
+      } else if (nums.length >= 5) {
         const tp = nums[nums.length - 2];
         if (!daily[lastDate]) daily[lastDate] = { RESTAURANTE: 0, 'Room Service': 0 };
         daily[lastDate][pdv] = (daily[lastDate][pdv] || 0) + tp;
       }
     }
   }
-  // Grand total line: "R$ 85.020,08R$ 7.689,55R$ 77.330,53R$ 5.445,11R$ 82.775,64" (5 values concatenated)
-  const brl = s => parseFloat(s.replace(/\./g,'').replace(',','.'));
-  const gm = text.match(/R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})R\$\s*([\d.]+,\d{2})\s*\n?Emitido/);
-  const grand = gm ? { valorBruto: brl(gm[1]), desconto: brl(gm[2]), valorLiquido: brl(gm[3]), taxa: brl(gm[4]), totalPago: brl(gm[5]) } : null;
-  return { daily, notas: { RESTAURANTE: notas.RESTAURANTE.size, 'Room Service': notas['Room Service'].size }, grand };
+  return { daily, notas: { RESTAURANTE: notas.RESTAURANTE.size, 'Room Service': notas['Room Service'].size }, brutoTaxa };
 }
 
 function parseOcupacao(text) {
@@ -326,9 +330,12 @@ async function findEventosXlsx() {
 
 // ── Sincronização ─────────────────────────────────────────────────────────────
 function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
-  const totalRST  = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
-  const totalRS   = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
-  const totalPago = vendas.grand?.totalPago || (totalRST + totalRS);
+  const totalRSTdiario = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
+  const totalRSdiario  = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
+  // Usa bruto+taxa por PDV (acumulado dos TOTAL DO DIA), com fallback nos totais diários
+  const totalRST  = vendas.brutoTaxa?.RESTAURANTE  || totalRSTdiario;
+  const totalRS   = vendas.brutoTaxa?.['Room Service'] || totalRSdiario;
+  const totalPago = +(totalRST + totalRS).toFixed(2);
   const clientes  = vendas.notas.RESTAURANTE + vendas.notas['Room Service'];
   const hospedes  = ocupacao.total;
 
