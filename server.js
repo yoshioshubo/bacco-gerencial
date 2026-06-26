@@ -462,24 +462,31 @@ app.get('/api/debug-eventos', async (req, res) => {
         }
       }
 
-      // Primeiras 10 linhas de dados com valores brutos
-      const amostra = [];
-      for (let i = Math.max(0,hRow+1); i < Math.min(rows.length, hRow+11); i++) {
+      // Coleta todas as linhas não-vazias com PAX > 0
+      const linhasComputadas = [];
+      let sumPax = 0, sumBanq = 0;
+      for (let i = hRow + 1; i < rows.length; i++) {
         const row = rows[i];
-        amostra.push({
-          idx: i,
-          paxCol: cPax >= 0 ? row[cPax] : 'N/A',
-          banqCol: cBanq >= 0 ? row[cBanq] : 'N/A',
-          formaCol: cForma >= 0 ? row[cForma] : 'N/A',
-          rowBruta: row.slice(0, 12)
-        });
+        const paxRaw  = row[cPax];
+        const banqRaw = row[cBanq];
+        const forma   = String(row[cForma] || '').toUpperCase();
+        if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
+        const pax = parseInt(paxRaw);
+        if (!pax || isNaN(pax) || pax <= 0) continue;
+        if (forma.includes('BACCO')) continue;
+        const banq = parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+        sumPax  += pax;
+        sumBanq += banq;
+        linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma], rowBruta: row.slice(0,12) });
       }
 
       out.abas.push({
         nome: sheetName, mesKey: key || '(não mapeado)',
         headerLinha: hRow, headerCelulas: headerCells,
         colunas: { PAX: cPax, BAN: cBanq, FORMA: cForma },
-        totalLinhas: rows.length, amostra
+        totalLinhas: rows.length,
+        RESULTADO: { totalPax: sumPax, totalBanq: +sumBanq.toFixed(2), linhasContadas: linhasComputadas.length },
+        linhasComputadas
       });
     }
     res.json(out);
