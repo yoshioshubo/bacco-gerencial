@@ -537,6 +537,35 @@ app.get('/api/debug-eventos', async (req, res) => {
   } catch(e) { res.status(500).json({ erro: e.message }); }
 });
 
+// ── Debug arquivos ────────────────────────────────────────────────────────────
+app.get('/api/debug-arquivos', async (req, res) => {
+  try {
+    const [vendaDir, ocupDir] = await Promise.all([
+      findFolder(SHARED_DRIVE, 'VENDAS'),
+      findFolder(SHARED_DRIVE, 'OCUPAÇÃO')
+    ]);
+    const [vendaPdfs, ocupPdfs] = await Promise.all([
+      vendaDir ? allPdfs(vendaDir.id) : [],
+      ocupDir  ? allPdfs(ocupDir.id)  : []
+    ]);
+    const xlsxFile = await findEventosXlsx().catch(() => null);
+    let eventosAbas = [];
+    if (xlsxFile) {
+      const buf = await downloadFile(xlsxFile.id);
+      const wb  = XLSX.read(buf, { type: 'buffer' });
+      eventosAbas = wb.SheetNames.map(s => ({
+        aba: s,
+        mesKey: SHEET_MES[s.toUpperCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'')] || null
+      }));
+    }
+    res.json({
+      vendas:  vendaPdfs.map(f => ({ nome: f.name, mesDetectado: mesKey(f.name) })),
+      ocupacao: ocupPdfs.map(f => ({ nome: f.name, mesDetectado: mesKey(f.name) })),
+      eventos: { arquivo: xlsxFile?.name || null, abas: eventosAbas }
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Debug ─────────────────────────────────────────────────────────────────────
 app.get('/api/debug-texto', async (req, res) => {
   try {
