@@ -333,24 +333,51 @@ function parseEventos(buffer) {
     const parseVal = v => typeof v === 'number' ? v
       : (parseFloat(String(v).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0);
 
-    // Converte valor de data Excel (serial ou string) para dd/mm/yyyy
+    const [mesAno, mesMes] = mesKey.split('-');
+
+    // Converte célula DATA para dd/mm/yyyy — suporta serial Excel, ranges, mês implícito
     const parseDateCell = v => {
-      if (!v) return null;
+      if (v === null || v === undefined || v === '') return null;
+
+      // Serial Excel (inteiro ou decimal como 46003.33)
       if (typeof v === 'number') {
-        // Serial Excel → JS Date
-        const d = new Date(Math.round((v - 25569) * 86400 * 1000));
-        const dd = String(d.getUTCDate()).padStart(2,'0');
-        const mm = String(d.getUTCMonth()+1).padStart(2,'0');
-        const yyyy = d.getUTCFullYear();
-        return `${dd}/${mm}/${yyyy}`;
+        const serial = Math.round(v);
+        const dt = new Date((serial - 25569) * 86400 * 1000);
+        const dd = String(dt.getUTCDate()).padStart(2,'0');
+        const mm = String(dt.getUTCMonth()+1).padStart(2,'0');
+        return `${dd}/${mm}/${dt.getUTCFullYear()}`;
       }
+
       const s = String(v).trim();
-      // Já no formato dd/mm/yyyy ou dd/mm/yy
-      if (/^\d{2}\/\d{2}\/\d{2,4}$/.test(s)) {
-        const parts = s.split('/');
-        if (parts[2].length === 2) parts[2] = '20' + parts[2];
-        return parts.join('/');
+      if (!s) return null;
+
+      // Caso 1: começa com dd/mm ou dd/mm/yyyy — pega a 1ª data (ignora range seguinte)
+      const m1 = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+      if (m1) {
+        const dd = m1[1].padStart(2,'0');
+        const mm = m1[2].padStart(2,'0');
+        const yr = m1[3] ? (m1[3].length === 2 ? '20'+m1[3] : m1[3]) : mesAno;
+        return `${dd}/${mm}/${yr}`;
       }
+
+      // Caso 2: "dd E/A dd/mm" — 1º dia + mês no fim do range (ex: "06 E 07/01", "29 e30/04")
+      const m2 = s.match(/^(\d{1,2})\s*[EeAa]\s*\d{1,2}\/(\d{1,2})/);
+      if (m2) {
+        return `${m2[1].padStart(2,'0')}/${m2[2].padStart(2,'0')}/${mesAno}`;
+      }
+
+      // Caso 3: "dd E/A dd" sem mês — usa mês da aba (ex: "29 E 30", "12 A 20")
+      const m3 = s.match(/^(\d{1,2})\s*[EeAa]\s*\d{1,2}(\s|$)/);
+      if (m3) {
+        return `${m3[1].padStart(2,'0')}/${mesMes}/${mesAno}`;
+      }
+
+      // Caso 4: só "dd" — usa mês e ano da aba
+      const m4 = s.match(/^(\d{1,2})$/);
+      if (m4) {
+        return `${m4[1].padStart(2,'0')}/${mesMes}/${mesAno}`;
+      }
+
       return null;
     };
 
