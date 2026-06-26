@@ -217,8 +217,9 @@ function render(d){
     const ts=new Date(d.sincAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     document.getElementById('syncTime').textContent='Atualizado '+ts;
   }
-  const rstPct = d.faturamentoTotal>0 ? d.faturamentoRST/d.faturamentoTotal : 0;
-  const rsPct  = d.faturamentoTotal>0 ? d.faturamentoRS/d.faturamentoTotal  : 0;
+  const rstPct  = d.faturamentoTotal>0 ? d.faturamentoRST/d.faturamentoTotal    : 0;
+  const rsPct   = d.faturamentoTotal>0 ? d.faturamentoRS/d.faturamentoTotal     : 0;
+  const evtPct  = d.faturamentoTotal>0 ? d.receitaEventos/d.faturamentoTotal    : 0;
   const hosped_media = d.diasComDados>0 ? R(d.hospedes/d.diasComDados,1) : '—';
   const ratio = d.kpiCobertura>0 ? Math.round(1/d.kpiCobertura) : '?';
 
@@ -299,6 +300,7 @@ function render(d){
           <div class="mix-leg">
             <div class="mi"><div class="n">Restaurante</div><div class="v">${BRL(d.faturamentoRST)}</div><div class="p" style="color:#1D9E75">${PCT(rstPct)} · ${R(d.clientesBacco)} clientes</div></div>
             <div class="mi"><div class="n">Room Service</div><div class="v">${BRL(d.faturamentoRS)}</div><div class="p" style="color:#378ADD">${PCT(rsPct)} · ${R(d.clientesRoomService)} clientes</div></div>
+            <div class="mi"><div class="n">Eventos</div><div class="v">${BRL(d.receitaEventos)}</div><div class="p" style="color:#854F0B">${PCT(evtPct)} · ${R(d.clientesEventos)} PAX</div></div>
           </div>
         </div>
       </div>
@@ -345,7 +347,7 @@ function render(d){
 
   charts.pie=new Chart(document.getElementById('cPie'),{
     type:'doughnut',
-    data:{labels:['Restaurante','Room Service'],datasets:[{data:[d.faturamentoRST,d.faturamentoRS],backgroundColor:['#1D9E75','#85B7EB'],borderWidth:0,hoverOffset:4}]},
+    data:{labels:['Restaurante','Room Service','Eventos'],datasets:[{data:[d.faturamentoRST,d.faturamentoRS,d.receitaEventos],backgroundColor:['#1D9E75','#85B7EB','#C97A2B'],borderWidth:0,hoverOffset:4}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}
   });
 }
