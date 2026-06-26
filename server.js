@@ -444,11 +444,16 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const hospedes  = ocupacao.total;
 
   const allDates = [...new Set([...Object.keys(vendas.daily), ...Object.keys(ocupacao.daily)])].sort();
+
+  // Calcula receitaEventos antes de usar no fallback
+  const eventosBanqPre   = eventosmes?.banq  || 0;
+  const receitaEventosPre = eventosmes?.total || eventosBanqPre;
+
   // Usa breakdown diário de eventos se disponível; caso contrário distribui igualmente
   const eventosDailyMap = eventosmes?.daily || {};
   const temDailyEventos = Object.keys(eventosDailyMap).length > 0;
   const eventosDiarioFallback = (!temDailyEventos && allDates.length > 0)
-    ? +(receitaEventos / allDates.length).toFixed(2) : 0;
+    ? +(receitaEventosPre / allDates.length).toFixed(2) : 0;
 
   const serie = allDates.map(d => ({
     data:        d,
