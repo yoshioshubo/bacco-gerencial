@@ -326,11 +326,9 @@ async function findEventosXlsx() {
 
 // ── Sincronização ─────────────────────────────────────────────────────────────
 function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
-  const totalRSTdiario = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
-  const totalRS        = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
-  // Receita RST = valor bruto + taxa de serviço (conforme solicitado)
-  const totalRST  = vendas.grand ? +(vendas.grand.valorBruto + vendas.grand.taxa).toFixed(2) : totalRSTdiario;
-  const totalPago = +(totalRST + totalRS).toFixed(2);
+  const totalRST  = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
+  const totalRS   = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
+  const totalPago = vendas.grand?.totalPago || (totalRST + totalRS);
   const clientes  = vendas.notas.RESTAURANTE + vendas.notas['Room Service'];
   const hospedes  = ocupacao.total;
 
