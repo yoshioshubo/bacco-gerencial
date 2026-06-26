@@ -292,10 +292,14 @@ function parseEventos(buffer) {
 
     let totalPax = 0, totalBanq = 0;
     for (let i = hRow + 1; i < rows.length; i++) {
-      const row  = rows[i];
+      const row     = rows[i];
+      const evento  = String(row[0] || '').trim();
       const paxRaw  = row[cPax];
       const banqRaw = row[cBanq];
       const forma   = String(row[cForma] || '').toUpperCase();
+
+      // Para ao encontrar linha completamente em branco (sem evento e sem PAX)
+      if (!evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined)) break;
 
       if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
       const pax = parseInt(paxRaw);
@@ -462,14 +466,16 @@ app.get('/api/debug-eventos', async (req, res) => {
         }
       }
 
-      // Coleta todas as linhas não-vazias com PAX > 0
+      // Coleta todas as linhas não-vazias com PAX > 0 (para na primeira linha em branco)
       const linhasComputadas = [];
       let sumPax = 0, sumBanq = 0;
       for (let i = hRow + 1; i < rows.length; i++) {
-        const row = rows[i];
+        const row     = rows[i];
+        const evento  = String(row[0] || '').trim();
         const paxRaw  = row[cPax];
         const banqRaw = row[cBanq];
         const forma   = String(row[cForma] || '').toUpperCase();
+        if (!evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined)) break;
         if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
         const pax = parseInt(paxRaw);
         if (!pax || isNaN(pax) || pax <= 0) continue;
@@ -477,7 +483,7 @@ app.get('/api/debug-eventos', async (req, res) => {
         const banq = parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0;
         sumPax  += pax;
         sumBanq += banq;
-        linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma], rowBruta: row.slice(0,12) });
+        linhasComputadas.push({ idx: i, evento: row[0], pax, banq, forma: row[cForma] });
       }
 
       out.abas.push({
