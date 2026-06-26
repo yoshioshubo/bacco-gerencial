@@ -7,13 +7,15 @@ const https    = require('https');
 const crypto   = require('crypto');
 const session  = require('express-session');
 const pdfParse = require('pdf-parse');
+const XLSX     = require('xlsx');
 
 const app          = express();
 const DATA_DIR     = path.join(__dirname, 'data');
 const TOKENS_FILE  = path.join(DATA_DIR, 'tokens.json');
 const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
-const SHARED_DRIVE = process.env.SHARED_DRIVE_ID || '0AKZcsytstd78Uk9PVA';
+const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
+const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
 const PORT         = process.env.PORT || 3001;
@@ -258,8 +260,66 @@ function parseOcupacao(text) {
   return { daily, total, receitaTotal };
 }
 
+// ── Parser de Eventos (planilha xlsx) ────────────────────────────────────────
+const SHEET_MES = {
+  'JANEIRO':'2026-01','FEVEREIRO':'2026-02','MARÇO':'2026-03','MARCO':'2026-03',
+  'ABRIL':'2026-04','MAIO':'2026-05','JUNHO':'2026-06','JULHO':'2026-07',
+  'AGOSTO':'2026-08','SETEMBRO':'2026-09','OUTUBRO':'2026-10',
+  'NOVEMBRO':'2026-11','DEZEMBRO':'2026-12'
+};
+
+function parseEventos(buffer) {
+  const wb   = XLSX.read(buffer, { type: 'buffer' });
+  const result = {};
+  for (const sheetName of wb.SheetNames) {
+    const mesKey = SHEET_MES[sheetName.toUpperCase().trim().normalize('NFD').replace(/[̀-ͯ]/g,'')];
+    if (!mesKey) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+
+    // Encontra a linha de cabeçalho procurando por "PAX"
+    let hRow = -1, cPax = -1, cBanq = -1, cForma = -1;
+    for (let i = 0; i < Math.min(15, rows.length); i++) {
+      const r = rows[i].map(c => String(c).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim());
+      const pi = r.findIndex(c => c.includes('PAX'));
+      if (pi >= 0) {
+        hRow  = i; cPax  = pi;
+        cBanq = r.findIndex(c => c.startsWith('BAN'));
+        cForma= r.findIndex(c => c.includes('FORMA') || (c.includes('PAGAMENTO') && c.length > 10));
+        break;
+      }
+    }
+    if (hRow < 0 || cBanq < 0) continue;
+
+    let totalPax = 0, totalBanq = 0;
+    for (let i = hRow + 1; i < rows.length; i++) {
+      const row  = rows[i];
+      const paxRaw  = row[cPax];
+      const banqRaw = row[cBanq];
+      const forma   = String(row[cForma] || '').toUpperCase();
+
+      if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
+      const pax = parseInt(paxRaw);
+      if (!pax || isNaN(pax) || pax <= 0) continue;
+      if (forma.includes('BACCO')) continue;
+
+      const banq = parseFloat(String(banqRaw).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+      totalPax  += pax;
+      totalBanq += banq;
+    }
+    result[mesKey] = { pax: totalPax, banq: +totalBanq.toFixed(2) };
+  }
+  return result;
+}
+
+async function findEventosXlsx() {
+  // Busca na pasta compartilhada e também em My Drive
+  const q = encodeURIComponent(`'${EVENTOS_FOLDER}' in parents and trashed=false and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel')`);
+  const d = await driveGet(`files?q=${q}&fields=files(id,name,modifiedTime)&corpora=allDrives`);
+  return d.files?.[0] || null;
+}
+
 // ── Sincronização ─────────────────────────────────────────────────────────────
-function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao) {
+function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const totalRST  = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
   const totalRS   = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
   const totalPago = vendas.grand?.totalPago || (totalRST + totalRS);
@@ -278,8 +338,8 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao) {
 
   const clientesCafe    = hospedes;
   const receitaCafe     = +ocupacao.receitaTotal.toFixed(2);
-  const clientesEventos = 771;
-  const receitaEventos  = 65559.00;
+  const clientesEventos = eventosmes?.pax  || 0;
+  const receitaEventos  = eventosmes?.banq || 0;
   const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
   const totalClientes   = clientes + clientesCafe + clientesEventos;
   const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
@@ -344,6 +404,16 @@ async function sincronizar() {
   const meses = [...new Set([...Object.keys(vendaMap), ...Object.keys(ocupMap)])].sort().reverse();
   if (!meses.length) throw new Error('Nenhum PDF encontrado nas pastas VENDAS / OCUPAÇÃO.');
 
+  // Baixa e parseia a planilha de eventos
+  let eventosMap = {};
+  try {
+    const xlsxFile = await findEventosXlsx();
+    if (xlsxFile) {
+      const xlsxBuf = await downloadFile(xlsxFile.id);
+      eventosMap = parseEventos(xlsxBuf);
+    }
+  } catch(e) { console.warn('[Eventos]', e.message); }
+
   const dados = {};
   for (const mes of meses) {
     const vf = vendaMap[mes];
@@ -358,7 +428,7 @@ async function sincronizar() {
     ]);
     const vendas   = parseVendas(vText);
     const ocupacao = parseOcupacao(oText);
-    dados[mes] = buildMesData(vf, of, vendas, ocupacao);
+    dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes]);
   }
 
   const result = { sincAt: new Date().toISOString(), meses, dados };
