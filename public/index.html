@@ -223,7 +223,8 @@ function render(d){
   const cafePct = d.faturamentoTotal>0 ? d.receitaCafe/d.faturamentoTotal       : 0;
   const evtPct  = d.faturamentoTotal>0 ? d.receitaEventos/d.faturamentoTotal    : 0;
   const hosped_media = d.diasComDados>0 ? R(d.hospedes/d.diasComDados,1) : '—';
-  const ratio = d.kpiCobertura>0 ? Math.round(1/d.kpiCobertura) : '?';
+  const kpiRS = d.hospedes>0 ? d.clientesRoomService/d.hospedes : 0;
+  const ratio = kpiRS>0 ? Math.round(1/kpiRS) : '?';
 
   document.getElementById('content').innerHTML=`
     <div class="ph">
@@ -268,10 +269,10 @@ function render(d){
     </div>
 
     <div class="banner">
-      <div class="banner-num">${PCT(d.kpiCobertura)}</div>
+      <div class="banner-num">${PCT(kpiRS)}</div>
       <div class="banner-desc">
         <h3>KPI — Qtd Vendas / Qtd Hóspedes Room Service</h3>
-        <p>${R(d.clientesRoomService)} vendas RS ÷ ${R(d.hospedes)} hóspedes = <strong>${PCT(d.kpiCobertura)}</strong></p>
+        <p>${R(d.clientesRoomService)} vendas RS ÷ ${R(d.hospedes)} hóspedes = <strong>${PCT(kpiRS)}</strong></p>
       </div>
     </div>
 
