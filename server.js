@@ -378,10 +378,14 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const hospedes  = ocupacao.total;
 
   const allDates = [...new Set([...Object.keys(vendas.daily), ...Object.keys(ocupacao.daily)])].sort();
+  // Eventos distribuídos igualmente pelos dias do período (não há breakdown diário)
+  const eventosDiario = allDates.length > 0 ? +(receitaEventos / allDates.length).toFixed(2) : 0;
   const serie = allDates.map(d => ({
     data:        d,
     restaurante: vendas.daily[d]?.RESTAURANTE || 0,
     roomService: vendas.daily[d]?.['Room Service'] || 0,
+    cafe:        ocupacao.daily[d]?.receita  || 0,
+    eventos:     eventosDiario,
     totalDia:   (vendas.daily[d]?.RESTAURANTE || 0) + (vendas.daily[d]?.['Room Service'] || 0),
     hospedes:    ocupacao.daily[d]?.hospedes || 0,
     receitaCafe: ocupacao.daily[d]?.receita  || 0

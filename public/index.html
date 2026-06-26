@@ -281,6 +281,8 @@ function render(d){
         <div class="leg">
           <span><span class="dot" style="background:#1D9E75"></span>Restaurante</span>
           <span><span class="dot" style="background:#85B7EB"></span>Room Service</span>
+          <span><span class="dot" style="background:#9B72CF"></span>Café da Manhã</span>
+          <span><span class="dot" style="background:#C97A2B"></span>Eventos</span>
         </div>
         <div style="position:relative;height:200px"><canvas id="cDia" role="img" aria-label="Faturamento diário por canal"></canvas></div>
       </div>
@@ -333,11 +335,40 @@ function render(d){
   const gc=dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.05)';
   const lbs=d.serie.map(s=>s.data.slice(0,5));
 
+  // Plugin: desenha "D" no topo das barras de domingo
+  const domingoPlugin = {
+    id:'domingo',
+    afterDatasetsDraw(chart){
+      const {ctx,scales:{x,y},data} = chart;
+      data.labels.forEach((lbl,i)=>{
+        const full = d.serie[i]?.data; // dd/mm/yyyy
+        if(!full) return;
+        const [dd,mm,yyyy] = full.split('/');
+        const dow = new Date(+yyyy, +mm-1, +dd).getDay();
+        if(dow !== 0) return; // 0 = domingo
+        // soma de todos os datasets naquele índice
+        let total = 0;
+        chart.data.datasets.forEach(ds=>{ total += (ds.data[i]||0); });
+        const xPos = x.getPixelForValue(i);
+        const yPos = y.getPixelForValue(total);
+        ctx.save();
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = '#A32D2D';
+        ctx.textAlign = 'center';
+        ctx.fillText('D', xPos, yPos - 4);
+        ctx.restore();
+      });
+    }
+  };
+
   charts.dia=new Chart(document.getElementById('cDia'),{
     type:'bar',
+    plugins:[domingoPlugin],
     data:{labels:lbs,datasets:[
-      {label:'Restaurante',data:d.serie.map(s=>s.restaurante),backgroundColor:'#1D9E75',borderRadius:2,stack:'s'},
-      {label:'Room Service',data:d.serie.map(s=>s.roomService),backgroundColor:'#85B7EB',borderRadius:2,stack:'s'}
+      {label:'Restaurante', data:d.serie.map(s=>s.restaurante), backgroundColor:'#1D9E75', borderRadius:2, stack:'s'},
+      {label:'Room Service',data:d.serie.map(s=>s.roomService), backgroundColor:'#85B7EB', borderRadius:2, stack:'s'},
+      {label:'Café da Manhã',data:d.serie.map(s=>s.cafe),      backgroundColor:'#9B72CF', borderRadius:2, stack:'s'},
+      {label:'Eventos',     data:d.serie.map(s=>s.eventos),    backgroundColor:'#C97A2B', borderRadius:2, stack:'s'}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{stacked:true,grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:45,autoSkip:false}},
