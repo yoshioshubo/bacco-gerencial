@@ -443,9 +443,9 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
   const receitaEventos  = eventosmes?.total || eventosBanq;
   const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
   const totalClientes   = clientes + clientesCafe + clientesEventos;
-  const ticketCafe      = clientesCafe    > 0 ? +(receitaCafe    / clientesCafe).toFixed(2)    : 0;
-  const ticketEventos   = clientesEventos > 0 ? +(receitaEventos / clientesEventos).toFixed(2) : 0;
-  const ticketGeral     = totalClientes   > 0 ? +(totalGeral     / totalClientes).toFixed(2)   : 0;
+  const ticketCafe      = clientesCafe    > 0 ? Math.round(receitaCafe    / clientesCafe)    : 0;
+  const ticketEventos   = clientesEventos > 0 ? Math.round(receitaEventos / clientesEventos) : 0;
+  const ticketGeral     = totalClientes   > 0 ? Math.round(totalGeral     / totalClientes)   : 0;
   const kpiCobertura    = hospedes > 0 ? vendas.notas['Room Service'] / hospedes : 0;
 
   return {
@@ -469,8 +469,8 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
     clientesEventos,
     clientesTotal:        totalClientes,
     // Tickets por canal
-    ticketRST:            vendas.notas.RESTAURANTE > 0 ? +(totalRST/vendas.notas.RESTAURANTE).toFixed(2) : 0,
-    ticketRS:             vendas.notas['Room Service'] > 0 ? +(totalRS/vendas.notas['Room Service']).toFixed(2) : 0,
+    ticketRST:            vendas.notas.RESTAURANTE > 0 ? Math.round(totalRST/vendas.notas.RESTAURANTE) : 0,
+    ticketRS:             vendas.notas['Room Service'] > 0 ? Math.round(totalRS/vendas.notas['Room Service']) : 0,
     ticketCafe,
     ticketEventos,
     ticketGeral,
