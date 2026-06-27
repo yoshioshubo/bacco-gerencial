@@ -281,10 +281,10 @@ function render(d){
         </div>
       </div>
       <div class="banner">
-        <div class="banner-num">${d.diasComDados > 0 ? (d.clientesTotal / d.diasComDados).toFixed(1).replace('.',',') : '—'}</div>
+        <div class="banner-num">${d.diasComDados > 0 ? Math.round(d.clientesTotal / d.diasComDados) : '—'}</div>
         <div class="banner-desc">
           <h3>KPI — Atendimentos / Dia</h3>
-          <p>${R(d.clientesTotal)} atendimentos ÷ ${R(d.diasComDados)} dias = <strong>${d.diasComDados > 0 ? (d.clientesTotal / d.diasComDados).toFixed(1).replace('.',',') : '—'}</strong></p>
+          <p>${R(d.clientesTotal)} atendimentos ÷ ${R(d.diasComDados)} dias = <strong>${d.diasComDados > 0 ? Math.round(d.clientesTotal / d.diasComDados) : '—'}</strong></p>
         </div>
       </div>
     </div>
