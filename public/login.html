@@ -9,8 +9,8 @@
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f4f2;min-height:100vh;display:flex;align-items:center;justify-content:center}
   .card{background:#fff;border-radius:16px;padding:2.5rem 2rem;width:100%;max-width:360px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
   .logo{text-align:center;margin-bottom:2rem}
-  .logo h1{font-size:22px;font-weight:500;color:#1a1a18}
-  .logo p{font-size:13px;color:#6b6b67;margin-top:4px}
+  .logo svg{height:42px;width:auto}
+  .logo p{font-size:13px;color:#6b6b67;margin-top:10px}
   .field{margin-bottom:1rem}
   label{display:block;font-size:12px;color:#6b6b67;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
   input{width:100%;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;transition:border-color .2s}
@@ -24,8 +24,12 @@
 <body>
 <div class="card">
   <div class="logo">
-    <h1>Relatório Gerencial</h1>
-    <p>Victory Business · Bacco</p>
+    <svg viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="28" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="26" fill="#1B2E7A" letter-spacing=".5">VICTORY</text>
+      <polyline points="138,18 143,26 152,10" fill="none" stroke="#1B2E7A" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="79" y="40" font-family="Arial,sans-serif" font-weight="400" font-size="9.5" fill="#1B2E7A" letter-spacing="5" text-anchor="middle">BUSINESS</text>
+    </svg>
+    <p>Relatório Gerencial A&amp;B</p>
   </div>
   <div class="erro" id="erroMsg">Usuário ou senha incorretos.</div>
   <form method="POST" action="/login">

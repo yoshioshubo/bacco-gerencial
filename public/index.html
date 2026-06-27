@@ -23,10 +23,10 @@
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 
   /* ── Nav ── */
-  nav{background:var(--surface);border-bottom:.5px solid var(--border);height:52px;display:flex;align-items:center;padding:0 1.5rem;gap:1rem}
-  .logo{display:flex;align-items:center}
-  .logo svg{height:34px;width:auto}
-  .nav-title{font-size:13px;color:var(--muted);margin-left:auto;margin-right:1rem;font-weight:500;letter-spacing:.01em}
+  nav{background:var(--surface);border-bottom:.5px solid var(--border);height:60px;display:flex;align-items:center;padding:0 1.5rem;position:relative}
+  .logo{display:flex;align-items:center;flex-shrink:0}
+  .logo svg{height:38px;width:auto}
+  .nav-title{font-size:20px;color:var(--muted);font-weight:500;letter-spacing:.01em;position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap}
   .sync-area{margin-left:auto;display:flex;align-items:center;gap:10px}
   .sync-btn{font-size:12px;padding:6px 14px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px}
   .sync-btn:hover{background:var(--bg)}
@@ -112,12 +112,13 @@
 
 <nav>
   <div class="logo">
-    <svg viewBox="0 0 140 44" xmlns="http://www.w3.org/2000/svg">
-      <text x="0" y="26" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="22" fill="#1B2E7A" letter-spacing="1">VICTO</text>
-      <text x="82" y="26" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="22" fill="#1B2E7A" letter-spacing="1">RY</text>
-      <!-- tick inside V -->
-      <polyline points="75,4 80,18 87,4" fill="none" stroke="#1B2E7A" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text x="70" y="40" font-family="Arial,sans-serif" font-weight="400" font-size="10" fill="#1B2E7A" letter-spacing="4" text-anchor="middle">BUSINESS</text>
+    <svg viewBox="0 0 158 44" xmlns="http://www.w3.org/2000/svg">
+      <!-- VICTORY text -->
+      <text x="0" y="28" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="26" fill="#1B2E7A" letter-spacing=".5">VICTORY</text>
+      <!-- checkmark after VICTORY -->
+      <polyline points="138,18 143,26 152,10" fill="none" stroke="#1B2E7A" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <!-- BUSINESS below, centered -->
+      <text x="79" y="40" font-family="Arial,sans-serif" font-weight="400" font-size="9.5" fill="#1B2E7A" letter-spacing="5" text-anchor="middle">BUSINESS</text>
     </svg>
   </div>
   <span class="nav-title">Relatório Gerencial A&amp;B</span>
