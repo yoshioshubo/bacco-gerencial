@@ -64,10 +64,12 @@
   .kpi.g .ks{color:var(--green)} .kpi.b .ks{color:var(--blue)}
 
   /* ── KPI banner ── */
-  .banner{background:var(--green-bg);border:.5px solid rgba(29,158,117,.2);border-radius:var(--r);padding:1rem 1.5rem;display:flex;align-items:center;gap:1.25rem;margin-bottom:1.25rem}
+  .banner-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}
+  .banner{background:var(--green-bg);border:.5px solid rgba(29,158,117,.2);border-radius:var(--r);padding:1rem 1.5rem;display:flex;align-items:center;gap:1.25rem}
   .banner-num{font-size:40px;font-weight:500;color:var(--green-dk);min-width:80px}
   .banner-desc h3{font-size:14px;font-weight:500;color:var(--green-md);margin-bottom:4px}
   .banner-desc p{font-size:13px;color:var(--green);line-height:1.55}
+  @media(max-width:700px){.banner-row{grid-template-columns:1fr}}
 
   /* ── Cards ── */
   .row2{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:1.25rem}
@@ -268,11 +270,20 @@ function render(d){
       </div>
     </div>
 
-    <div class="banner">
-      <div class="banner-num">${PCT(kpiRS)}</div>
-      <div class="banner-desc">
-        <h3>KPI — Qtd Vendas / Qtd Hóspedes Room Service</h3>
-        <p>${R(d.clientesRoomService)} vendas RS ÷ ${R(d.hospedes)} hóspedes = <strong>${PCT(kpiRS)}</strong></p>
+    <div class="banner-row">
+      <div class="banner">
+        <div class="banner-num">${PCT(kpiRS)}</div>
+        <div class="banner-desc">
+          <h3>KPI — Qtd Vendas / Qtd Hóspedes Room Service</h3>
+          <p>${R(d.clientesRoomService)} vendas RS ÷ ${R(d.hospedes)} hóspedes = <strong>${PCT(kpiRS)}</strong></p>
+        </div>
+      </div>
+      <div class="banner">
+        <div class="banner-num">${d.diasComDados > 0 ? (d.clientesTotal / d.diasComDados).toFixed(1).replace('.',',') : '—'}</div>
+        <div class="banner-desc">
+          <h3>KPI — Atendimentos / Dia</h3>
+          <p>${R(d.clientesTotal)} atendimentos ÷ ${R(d.diasComDados)} dias = <strong>${d.diasComDados > 0 ? (d.clientesTotal / d.diasComDados).toFixed(1).replace('.',',') : '—'}</strong></p>
+        </div>
       </div>
     </div>
 
