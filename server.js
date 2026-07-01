@@ -83,6 +83,18 @@ app.post('/login', (req, res) => {
   res.redirect('/');
 });
 
+app.post('/api/admin/reset-senha', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado.' });
+  const { usuario, novaSenha } = req.body;
+  const id = String(usuario || '').toLowerCase();
+  const users = loadUsers();
+  if (!users[id]) return res.status(404).json({ error: `Usuário ${id} não encontrado.` });
+  users[id].password   = hashPwd(novaSenha || '123456');
+  users[id].mustChange = true;
+  saveUsers(users);
+  res.json({ ok: true, usuario: id, mustChange: true });
+});
+
 app.post('/trocar-senha', (req, res) => {
   if (!req.session?.user) return res.redirect('/login');
   const { nova, confirma } = req.body;
