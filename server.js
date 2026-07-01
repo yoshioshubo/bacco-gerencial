@@ -28,16 +28,26 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 // ── Usuários ──────────────────────────────────────────────────────────────────
 function hashPwd(pwd) { return crypto.createHash('sha256').update(pwd + 'bacco-salt').digest('hex'); }
 
+const DEFAULT_USERS = {
+  andrea: { displayName: 'Andrea', password: hashPwd('1234'),   mustChange: true },
+  yoshio: { displayName: 'Yoshio', password: hashPwd('1234'),   mustChange: true },
+  rafael: { displayName: 'Rafael', password: hashPwd('123456'), mustChange: true },
+  paulo:  { displayName: 'Paulo',  password: hashPwd('123456'), mustChange: true }
+};
+
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) {
-    const defaults = {
-      andrea: { displayName: 'Andrea', password: hashPwd('1234'), mustChange: true },
-      yoshio: { displayName: 'Yoshio', password: hashPwd('1234'), mustChange: true }
-    };
-    fs.writeFileSync(USERS_FILE, JSON.stringify(defaults, null, 2));
-    return defaults;
+    fs.writeFileSync(USERS_FILE, JSON.stringify(DEFAULT_USERS, null, 2));
+    return DEFAULT_USERS;
   }
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  // Adiciona usuários padrão que ainda não existem (sem sobrescrever os já criados)
+  let changed = false;
+  for (const [id, u] of Object.entries(DEFAULT_USERS)) {
+    if (!users[id]) { users[id] = u; changed = true; }
+  }
+  if (changed) fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  return users;
 }
 
 function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
