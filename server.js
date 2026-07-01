@@ -383,6 +383,7 @@ function parseEventos(buffer) {
 
     let totalPax = 0, totalBanq = 0, totalSala = 0, totalEquip = 0;
     const daily = {};
+    const linhas = [];
     for (let i = hRow + 1; i < rows.length; i++) {
       const row     = rows[i];
       const evento  = String(row[0] || '').trim();
@@ -402,6 +403,7 @@ function parseEventos(buffer) {
       const sala  = cSala  >= 0 ? parseVal(row[cSala])  : 0;
       const equip = cEquip >= 0 ? parseVal(row[cEquip]) : 0;
       const rowTotal = +(sala + equip + banq).toFixed(2);
+      const dateKey = cData >= 0 ? parseDateCell(row[cData]) : null;
 
       totalPax  += pax;
       totalBanq += banq;
@@ -409,7 +411,6 @@ function parseEventos(buffer) {
       totalEquip+= equip;
 
       // Acumula por data se coluna DATA disponível
-      const dateKey = cData >= 0 ? parseDateCell(row[cData]) : null;
       if (dateKey) {
         if (!daily[dateKey]) daily[dateKey] = { pax:0, sala:0, equip:0, banq:0, total:0 };
         daily[dateKey].pax   += pax;
@@ -418,9 +419,11 @@ function parseEventos(buffer) {
         daily[dateKey].banq  += banq;
         daily[dateKey].total += rowTotal;
       }
+
+      linhas.push({ data: dateKey || '', evento, pax, banq: +banq.toFixed(2), sala: +sala.toFixed(2), equip: +equip.toFixed(2), total: rowTotal, forma: String(row[cForma] || '').trim() });
     }
     const total = +(totalSala + totalEquip + totalBanq).toFixed(2);
-    result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total, daily };
+    result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total, daily, linhas };
   }
   return result;
 }
@@ -568,7 +571,7 @@ async function sincronizar() {
     dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes]);
   }
 
-  const result = { sincAt: new Date().toISOString(), meses, dados };
+  const result = { sincAt: new Date().toISOString(), meses, dados, eventosRaw: eventosMap };
   fs.writeFileSync(RESULT_FILE, JSON.stringify(result, null, 2));
   return result;
 }
@@ -705,6 +708,19 @@ app.get('/api/dados', (req, res) => {
   const d   = store.dados[mes];
   if (!d) return res.status(404).json({ error: `Mês ${mes} não encontrado.` });
   res.json({ sincAt: store.sincAt, meses: store.meses, mesSelecionado: mes, mesLabel: mesLabel(mes), ...d });
+});
+
+app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
+
+app.get('/api/eventos', (req, res) => {
+  if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
+  const store = JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8'));
+  const meses = store.meses || [];
+  const mes = req.query.mes || meses[0];
+  if (!mes) return res.json({ meses: [], mes: null, linhas: [], totais: {} });
+  const raw = store.eventosRaw?.[mes];
+  if (!raw) return res.json({ meses, mes, linhas: [], totais: { pax:0, banq:0, sala:0, equip:0, total:0 } });
+  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas: raw.linhas || [], totais: { pax: raw.pax, banq: raw.banq, sala: raw.sala, equip: raw.equip, total: raw.total } });
 });
 
 app.post('/api/sincronizar', async (req, res) => {
