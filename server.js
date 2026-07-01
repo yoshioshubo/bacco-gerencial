@@ -720,7 +720,7 @@ app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'e
 app.get('/api/eventos', (req, res) => {
   if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
   const store = JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8'));
-  const meses = store.meses || [];
+  const meses = [...new Set([...(store.meses || []), ...Object.keys(store.eventosRaw || {})])].sort().reverse();
   const mes = req.query.mes || meses[0];
   if (!mes) return res.json({ meses: [], mes: null, linhas: [], totais: {} });
   const raw = store.eventosRaw?.[mes];
