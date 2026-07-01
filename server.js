@@ -384,6 +384,7 @@ function parseEventos(buffer) {
     let totalPax = 0, totalBanq = 0, totalSala = 0, totalEquip = 0;
     const daily = {};
     const linhas = [];
+    let linhasVazias = 0;
     for (let i = hRow + 1; i < rows.length; i++) {
       const row     = rows[i];
       const evento  = String(row[0] || '').trim();
@@ -391,8 +392,10 @@ function parseEventos(buffer) {
       const banqRaw = row[cBanq];
       const forma   = String(row[cForma] || '').toUpperCase();
 
-      // Para ao encontrar linha completamente em branco (sem evento e sem PAX)
-      if (!evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined)) break;
+      // Conta linhas consecutivas sem evento E sem PAX — para após 3
+      const vazia = !evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined);
+      if (vazia) { if (++linhasVazias >= 3) break; continue; }
+      linhasVazias = 0;
 
       if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
       const pax = parseInt(paxRaw);
@@ -603,16 +606,18 @@ app.get('/api/debug-eventos', async (req, res) => {
         }
       }
 
-      // Coleta todas as linhas não-vazias com PAX > 0 (para na primeira linha em branco)
+      // Coleta todas as linhas não-vazias com PAX > 0 (para após 3 linhas em branco consecutivas)
       const linhasComputadas = [];
-      let sumPax = 0, sumBanq = 0;
+      let sumPax = 0, sumBanq = 0, vazias = 0;
       for (let i = hRow + 1; i < rows.length; i++) {
         const row     = rows[i];
         const evento  = String(row[0] || '').trim();
         const paxRaw  = row[cPax];
         const banqRaw = row[cBanq];
         const forma   = String(row[cForma] || '').toUpperCase();
-        if (!evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined)) break;
+        const vazia = !evento && (paxRaw === '' || paxRaw === null || paxRaw === undefined);
+        if (vazia) { if (++vazias >= 3) break; continue; }
+        vazias = 0;
         if (paxRaw === '' || paxRaw === null || paxRaw === undefined) continue;
         const pax = parseInt(paxRaw);
         if (!pax || isNaN(pax) || pax <= 0) continue;
