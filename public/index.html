@@ -78,7 +78,7 @@
   @media(max-width:700px){.banner-row{grid-template-columns:1fr}}
 
   /* ── Cards ── */
-  .row2{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:1.25rem}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
   @media(max-width:900px){.row3{grid-template-columns:1fr 1fr}}
   @media(max-width:640px){.row2,.row3{grid-template-columns:1fr}}
@@ -302,22 +302,20 @@ function render(d){
 
     <div class="row2">
       <div class="card">
-        <div class="ct">Faturamento diário — total pago (R$)</div>
+        <div class="ct">Faturamento diário — Restaurante, RS e Café (R$)</div>
         <div class="leg">
           <span><span class="dot" style="background:#1D9E75"></span>Restaurante</span>
           <span><span class="dot" style="background:#85B7EB"></span>Room Service</span>
           <span><span class="dot" style="background:#9B72CF"></span>Café da Manhã</span>
-          <span><span class="dot" style="background:#C97A2B"></span>Eventos</span>
         </div>
         <div style="position:relative;height:200px"><canvas id="cDia" role="img" aria-label="Faturamento diário por canal"></canvas></div>
       </div>
       <div class="card">
-        <div class="ct">Hóspedes vs clientes F&B</div>
+        <div class="ct">Faturamento diário — Eventos (R$)</div>
         <div class="leg">
-          <span><span class="dot" style="background:#85B7EB"></span>Hóspedes</span>
-          <span><span class="dot" style="background:#1D9E75"></span>Clientes</span>
+          <span><span class="dot" style="background:#C97A2B"></span>Eventos</span>
         </div>
-        <div style="position:relative;height:200px"><canvas id="cOcup" role="img" aria-label="Hóspedes vs clientes por dia"></canvas></div>
+        <div style="position:relative;height:200px"><canvas id="cEventosDia" role="img" aria-label="Faturamento diário de eventos"></canvas></div>
       </div>
     </div>
 
@@ -386,9 +384,12 @@ function render(d){
     }
   };
 
-  // Calcula média diária (total geral / dias)
-  const mediaVal = d.faturamentoTotal / (d.diasComDados || 1);
+  // Calcula médias diárias por grupo
+  const dias = d.diasComDados || 1;
+  const mediaVal = (d.faturamentoRST + d.faturamentoRS + d.receitaCafe) / dias;
   const mediaArr = d.serie.map(() => +mediaVal.toFixed(2));
+  const mediaEventosVal = d.receitaEventos / dias;
+  const mediaEventosArr = d.serie.map(() => +mediaEventosVal.toFixed(2));
 
   // Plugin: linha de média tracejada com valor no centro
   const mediaPlugin = {
@@ -437,7 +438,6 @@ function render(d){
       {label:'Restaurante',  data:d.serie.map(s=>s.restaurante||0),           backgroundColor:'#1D9E75', borderRadius:2, stack:'s', order:1},
       {label:'Room Service', data:d.serie.map(s=>s.roomService||0),           backgroundColor:'#85B7EB', borderRadius:2, stack:'s', order:1},
       {label:'Café da Manhã',data:d.serie.map(s=>s.cafe||s.receitaCafe||0),  backgroundColor:'#9B72CF', borderRadius:2, stack:'s', order:1},
-      {label:'Eventos',      data:d.serie.map(s=>s.eventos||0),               backgroundColor:'#C97A2B', borderRadius:2, stack:'s', order:1},
       {label:'Média diária', data:mediaArr, type:'line', borderColor:'transparent',
        pointRadius:0, fill:false, tension:0, order:0}
     ]},
@@ -446,15 +446,17 @@ function render(d){
               y:{stacked:true,grid:{color:gc},border:{display:false},ticks:{color:tc,font:{size:10},callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v}}}}
   });
 
-  charts.ocup=new Chart(document.getElementById('cOcup'),{
-    type:'line',
+  charts.eventosDia=new Chart(document.getElementById('cEventosDia'),{
+    type:'bar',
+    plugins:[domingoPlugin, mediaPlugin],
     data:{labels:lbs,datasets:[
-      {label:'Hóspedes',data:d.serie.map(s=>s.hospedes),borderColor:'#85B7EB',backgroundColor:'rgba(133,183,235,.12)',fill:true,tension:.3,pointRadius:2,borderWidth:2},
-      {label:'Clientes',data:d.serie.map(s=>d.ticketMedio>0?Math.round(s.totalDia/d.ticketMedio):0),borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,.08)',fill:true,tension:.3,pointRadius:2,borderWidth:2,borderDash:[4,3]}
+      {label:'Eventos',      data:d.serie.map(s=>s.eventos||0),               backgroundColor:'#C97A2B', borderRadius:2, stack:'s', order:1},
+      {label:'Média diária', data:mediaEventosArr, type:'line', borderColor:'transparent',
+       pointRadius:0, fill:false, tension:0, order:0}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:45,autoSkip:false}},
-              y:{grid:{color:gc},border:{display:false},beginAtZero:true,ticks:{color:tc,font:{size:10}}}}}
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:dark?'rgba(255,255,255,.7)':'rgba(0,0,0,.65)',font:{size:10,weight:'500'},maxRotation:45,autoSkip:false}},
+              y:{stacked:true,grid:{color:gc},border:{display:false},ticks:{color:tc,font:{size:10},callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v}}}}
   });
 
   charts.pie=new Chart(document.getElementById('cPie'),{
