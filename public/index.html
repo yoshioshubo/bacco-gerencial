@@ -464,7 +464,11 @@ function render(d){
   });
 }
 
-carregar();
+(async function autoSync(){
+  await carregar();
+  const status = await fetch('/auth/status').then(r=>r.json()).catch(()=>({}));
+  if (status.autorizado) sincronizar();
+})();
 </script>
 </body>
 </html>
