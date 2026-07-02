@@ -843,6 +843,47 @@ app.get('/api/dados', (req, res) => {
 });
 
 app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
+app.get('/inventario', (req, res) => res.sendFile(path.join(__dirname, 'public', 'inventario.html')));
+
+app.get('/api/inventario', async (req, res) => {
+  try {
+    const buf = await downloadFile(INVENTARIO_FILE_ID);
+    const wb  = XLSX.read(buf, { type: 'buffer' });
+    const imagens = extractXlsxImages(buf);
+    const sheetName = wb.SheetNames[0];
+    const rows  = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+    const fotos = imagens[sheetName] || {};
+    const subHeader = rows[1] || [];
+    const colunas = {
+      total: 'Total',
+      adega: String(subHeader[2] || '').trim() || '15 na Adega',
+      bacco: String(subHeader[3] || '').trim() || 'p/ Bacco'
+    };
+
+    const vazio = v => v === '' || v === null || v === undefined;
+    const linhas = [];
+    let categoria = '';
+    let itemSeq = 0;
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      const nome = String(row[0] || '').trim();
+      const [, b, c, d] = row;
+      const isCategoria = nome && vazio(b) && vazio(c) && vazio(d);
+      if (isCategoria) { categoria = nome; itemSeq = 0; continue; }
+      if (vazio(b) && vazio(c) && vazio(d)) continue;
+      itemSeq++;
+      linhas.push({
+        categoria: categoria || 'Sem categoria',
+        item: `Item ${itemSeq}`,
+        total: typeof b === 'number' ? b : (parseFloat(b) || 0),
+        adega: typeof c === 'number' ? c : (parseFloat(c) || 0),
+        bacco: typeof d === 'number' ? d : (parseFloat(d) || 0),
+        foto: fotos[i] || null
+      });
+    }
+    res.json({ colunas, linhas });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/eventos', (req, res) => {
   if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
