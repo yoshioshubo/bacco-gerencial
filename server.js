@@ -16,6 +16,7 @@ const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
+const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
 const PORT         = process.env.PORT || 3001;
@@ -600,6 +601,24 @@ async function sincronizar() {
   fs.writeFileSync(RESULT_FILE, JSON.stringify(result, null, 2));
   return result;
 }
+
+// ── Debug Inventário ──────────────────────────────────────────────────────────
+app.get('/api/debug-inventario', async (req, res) => {
+  try {
+    const buf = await downloadFile(INVENTARIO_FILE_ID);
+    const wb  = XLSX.read(buf, { type: 'buffer' });
+    const out = { abas: [] };
+    for (const sheetName of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+      out.abas.push({
+        nome: sheetName,
+        totalLinhas: rows.length,
+        primeirasLinhas: rows.slice(0, 20)
+      });
+    }
+    res.json(out);
+  } catch(e) { res.status(500).json({ erro: e.message }); }
+});
 
 // ── Debug Eventos ─────────────────────────────────────────────────────────────
 app.get('/api/debug-eventos', async (req, res) => {
