@@ -8,6 +8,7 @@ const crypto   = require('crypto');
 const session  = require('express-session');
 const pdfParse = require('pdf-parse');
 const XLSX     = require('xlsx');
+const AdmZip   = require('adm-zip');
 
 const app          = express();
 const DATA_DIR     = path.join(__dirname, 'data');
@@ -454,6 +455,86 @@ function parseEventos(buffer) {
   return result;
 }
 
+// ── Extrai imagens embutidas de um .xlsx, mapeadas por aba + linha ────────────
+function extractXlsxImages(buffer) {
+  const result = {}; // { sheetName: { rowIndex(0-based): dataUrl } }
+  try {
+    const zip = new AdmZip(buffer);
+    const readText = p => { const e = zip.getEntry(p); return e ? zip.readAsText(e) : null; };
+    const readBin  = p => { const e = zip.getEntry(p); return e ? zip.readFile(e) : null; };
+
+    const resolveRelPath = (basePath, target) => {
+      // basePath ex: 'xl/worksheets/sheet1.xml', target ex: '../drawings/drawing1.xml'
+      const baseDir = basePath.split('/').slice(0, -1); // ['xl','worksheets']
+      const parts = target.split('/');
+      const stack = [...baseDir];
+      for (const part of parts) {
+        if (part === '..') stack.pop();
+        else if (part !== '.') stack.push(part);
+      }
+      return stack.join('/');
+    };
+
+    const parseRels = xml => {
+      const map = {};
+      if (!xml) return map;
+      const re = /<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*\/?>/g;
+      let m;
+      while ((m = re.exec(xml))) map[m[1]] = m[2];
+      return map;
+    };
+
+    // 1. Mapeia nome da aba -> r:id -> caminho do sheetN.xml
+    const workbookXml = readText('xl/workbook.xml');
+    const workbookRels = parseRels(readText('xl/_rels/workbook.xml.rels'));
+    const sheetEntries = [];
+    if (workbookXml) {
+      const re = /<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/?>/g;
+      let m;
+      while ((m = re.exec(workbookXml))) sheetEntries.push({ name: m[1], rId: m[2] });
+    }
+
+    for (const { name, rId } of sheetEntries) {
+      const target = workbookRels[rId];
+      if (!target) continue;
+      const sheetPath = resolveRelPath('xl/workbook.xml', target); // ex: xl/worksheets/sheet1.xml
+      const sheetFile = sheetPath.split('/').pop();
+      const sheetRelsPath = `xl/worksheets/_rels/${sheetFile}.rels`;
+      const sheetRels = parseRels(readText(sheetRelsPath));
+      const drawingRel = Object.values(sheetRels).find(t => t.includes('drawing'));
+      if (!drawingRel) continue;
+      const drawingPath = resolveRelPath(sheetPath, drawingRel); // xl/drawings/drawing1.xml
+      const drawingXml = readText(drawingPath);
+      if (!drawingXml) continue;
+      const drawingFile = drawingPath.split('/').pop();
+      const drawingRelsPath = `xl/drawings/_rels/${drawingFile}.rels`;
+      const drawingRels = parseRels(readText(drawingRelsPath));
+
+      // 2. Percorre âncoras (twoCellAnchor / oneCellAnchor), extrai linha inicial + rId da imagem
+      const anchorRe = /<xdr:(?:twoCellAnchor|oneCellAnchor)[\s\S]*?<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/g;
+      const rowMap = {};
+      let am;
+      while ((am = anchorRe.exec(drawingXml))) {
+        const block = am[0];
+        const rowM = block.match(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/);
+        const embedM = block.match(/r:embed="([^"]+)"/);
+        if (!rowM || !embedM) continue;
+        const row = parseInt(rowM[1]);
+        const mediaTarget = drawingRels[embedM[1]];
+        if (!mediaTarget) continue;
+        const mediaPath = resolveRelPath(drawingPath, mediaTarget); // xl/media/imageN.ext
+        const bin = readBin(mediaPath);
+        if (!bin) continue;
+        const ext = mediaPath.split('.').pop().toLowerCase();
+        const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+        rowMap[row] = `data:${mime};base64,${bin.toString('base64')}`;
+      }
+      if (Object.keys(rowMap).length) result[name] = rowMap;
+    }
+  } catch(e) { console.warn('[Inventario] Falha ao extrair imagens:', e.message); }
+  return result;
+}
+
 async function findEventosXlsx() {
   // Busca na pasta compartilhada e também em My Drive
   const q = encodeURIComponent(`'${EVENTOS_FOLDER}' in parents and trashed=false and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel')`);
@@ -607,14 +688,17 @@ app.get('/api/debug-inventario', async (req, res) => {
   try {
     const buf = await downloadFile(INVENTARIO_FILE_ID);
     const wb  = XLSX.read(buf, { type: 'buffer' });
+    const imagens = extractXlsxImages(buf);
     const out = { abas: [] };
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const linhasComFoto = Object.keys(imagens[sheetName] || {}).map(Number).sort((a,b)=>a-b);
       out.abas.push({
         nome: sheetName,
         totalLinhas: rows.length,
         merges: sheet['!merges'] || [],
+        linhasComFotoIdx: linhasComFoto,
         todasLinhas: rows
       });
     }
