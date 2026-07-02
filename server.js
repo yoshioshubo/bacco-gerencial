@@ -830,6 +830,24 @@ app.get('/api/debug-texto', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-produtos', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    const vendaPdf = await latestPdf(vendaDir.id);
+    const vendaBuf = await downloadFile(vendaPdf.id);
+    const vendaText = await pdfParse(vendaBuf).then(r => r.text);
+    const linhas = vendaText.split('\n');
+    const kw = /CERVEJA|AGUA|ÁGUA|REFRIGERANTE|SUCO|VINHO|DOSE|DRINK|WHISK|VODKA|GIN|CHOPP|ENERG|REFRI|COCA|GUARANA|ESPUMANTE|CAIPIR/i;
+    const amostra = linhas.filter(l => kw.test(l));
+    res.json({
+      arquivo: vendaPdf.name,
+      totalLinhas: linhas.length,
+      primeiras60: linhas.slice(0, 60),
+      amostraBebidas: amostra.slice(0, 60)
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Rotas ─────────────────────────────────────────────────────────────────────
 app.get('/api/dados', (req, res) => {
   if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
