@@ -609,11 +609,13 @@ app.get('/api/debug-inventario', async (req, res) => {
     const wb  = XLSX.read(buf, { type: 'buffer' });
     const out = { abas: [] };
     for (const sheetName of wb.SheetNames) {
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       out.abas.push({
         nome: sheetName,
         totalLinhas: rows.length,
-        primeirasLinhas: rows.slice(0, 20)
+        merges: sheet['!merges'] || [],
+        todasLinhas: rows
       });
     }
     res.json(out);
