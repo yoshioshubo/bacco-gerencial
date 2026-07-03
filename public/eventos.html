@@ -65,6 +65,9 @@
   tfoot td{padding:10px 14px;font-weight:600;background:var(--green-bg);color:var(--green-dk);font-size:13px}
   tfoot td.num{text-align:right}
   .badge-forma{font-size:10px;padding:2px 8px;border-radius:5px;background:var(--amber-bg);color:var(--amber)}
+  .badge-status{font-size:10px;padding:2px 8px;border-radius:5px;font-weight:600;white-space:nowrap}
+  .badge-status.realizado{background:var(--green-bg);color:var(--green-dk)}
+  .badge-status.agendado{background:var(--blue-bg);color:var(--blue-dk)}
   .empty{text-align:center;padding:3rem;color:var(--hint);font-size:14px}
 </style>
 </head>
@@ -97,7 +100,13 @@
     <div class="rcard"><div class="lbl">Banquete</div><div class="val" id="rBanq">—</div></div>
     <div class="rcard"><div class="lbl">Sala</div><div class="val" id="rSala">—</div></div>
     <div class="rcard"><div class="lbl">Equipamentos</div><div class="val" id="rEquip">—</div></div>
-    <div class="rcard" style="border-color:var(--green);"><div class="lbl">Total</div><div class="val" id="rTotal" style="color:var(--green-md)">—</div></div>
+    <div class="rcard" style="border-color:var(--green);"><div class="lbl">Total do mês (agenda)</div><div class="val" id="rTotal" style="color:var(--green-md)">—</div></div>
+  </div>
+
+  <div class="rcard" id="realizadoCard" style="display:none;margin-bottom:1.25rem;border-color:var(--blue);max-width:340px">
+    <div class="lbl">Realizado até hoje</div>
+    <div class="val" id="rRealizado" style="color:var(--blue-dk)">—</div>
+    <div class="sub" id="rRealizadoSub"></div>
   </div>
 
   <div class="tcard">
@@ -112,6 +121,7 @@
           <th class="num">Equipamentos</th>
           <th class="num">Total</th>
           <th>Forma Pag.</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -153,7 +163,7 @@ async function carregar(mes) {
     sel.style.display = 'none';
   }
 
-  // Totais
+  // Totais (mês inteiro / agenda completa)
   const t = d.totais || {};
   document.getElementById('rPax').textContent   = R(t.pax   || 0);
   document.getElementById('rBanq').textContent  = BRL(t.banq  || 0);
@@ -161,13 +171,24 @@ async function carregar(mes) {
   document.getElementById('rEquip').textContent = BRL(t.equip || 0);
   document.getElementById('rTotal').textContent = BRL(t.total || 0);
 
+  // Card "Realizado até hoje" — só existe quando o mês selecionado é o mês corrente
+  const rc = document.getElementById('realizadoCard');
+  if (d.realizadoAteHoje) {
+    rc.style.display = '';
+    document.getElementById('rRealizado').textContent = BRL(d.realizadoAteHoje.total || 0);
+    document.getElementById('rRealizadoSub').textContent =
+      `${R(d.realizadoAteHoje.pax || 0)} pax em eventos já ocorridos`;
+  } else {
+    rc.style.display = 'none';
+  }
+
   // Tabela
   const tbody = document.getElementById('tbody');
   const tfoot = document.getElementById('tfoot');
   const linhas = d.linhas || [];
 
   if (!linhas.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">Nenhum evento encontrado para este período.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">Nenhum evento encontrado para este período.</td></tr>`;
     tfoot.innerHTML = '';
     return;
   }
@@ -182,15 +203,17 @@ async function carregar(mes) {
       <td class="num">${l.equip > 0 ? BRL(l.equip) : '—'}</td>
       <td class="num"><strong>${BRL(l.total)}</strong></td>
       <td>${l.forma ? `<span class="badge-forma">${l.forma}</span>` : '—'}</td>
+      <td><span class="badge-status ${l.status}">${l.status === 'agendado' ? 'Agendado' : 'Realizado'}</span></td>
     </tr>`).join('');
 
   tfoot.innerHTML = `<tr>
-    <td colspan="2">Total</td>
+    <td colspan="2">Total do mês</td>
     <td class="num">${R(t.pax || 0)} pax</td>
     <td class="num">${BRL(t.banq || 0)}</td>
     <td class="num">${BRL(t.sala || 0)}</td>
     <td class="num">${BRL(t.equip || 0)}</td>
     <td class="num">${BRL(t.total || 0)}</td>
+    <td></td>
     <td></td>
   </tr>`;
 }

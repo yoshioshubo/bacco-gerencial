@@ -939,29 +939,30 @@ app.get('/api/eventos', (req, res) => {
   const raw = store.eventosRaw?.[mes];
   if (!raw) return res.json({ meses, mes, linhas: [], totais: { pax:0, banq:0, sala:0, equip:0, total:0 } });
 
-  let linhas = raw.linhas || [];
-  let totais = { pax: raw.pax, banq: raw.banq, sala: raw.sala, equip: raw.equip, total: raw.total };
+  const totais = { pax: raw.pax, banq: raw.banq, sala: raw.sala, equip: raw.equip, total: raw.total };
 
-  // No mês corrente, mostra apenas eventos até a data de hoje (agenda ainda não realizada não deve compor o total)
-  if (mes === mesAtual) {
-    const hoje = new Date();
-    hoje.setHours(23, 59, 59, 999);
-    linhas = linhas.filter(l => {
-      if (!l.data) return false;
+  // Marca cada evento como já realizado ou ainda agendado (só é relevante no mês corrente)
+  const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+  const linhas = (raw.linhas || []).map(l => {
+    let status = 'realizado';
+    if (l.data) {
       const [dd, mm, yyyy] = l.data.split('/');
-      return new Date(+yyyy, +mm - 1, +dd) <= hoje;
-    });
-    totais = linhas.reduce((acc, l) => ({
-      pax:   acc.pax   + (l.pax   || 0),
-      banq:  acc.banq  + (l.banq  || 0),
-      sala:  acc.sala  + (l.sala  || 0),
-      equip: acc.equip + (l.equip || 0),
-      total: acc.total + (l.total || 0)
-    }), { pax: 0, banq: 0, sala: 0, equip: 0, total: 0 });
-    totais = { pax: totais.pax, banq: +totais.banq.toFixed(2), sala: +totais.sala.toFixed(2), equip: +totais.equip.toFixed(2), total: +totais.total.toFixed(2) };
-  }
+      if (new Date(+yyyy, +mm - 1, +dd) > hoje) status = 'agendado';
+    }
+    return { ...l, status };
+  });
 
-  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais });
+  const realizadoAteHoje = mes === mesAtual
+    ? linhas.filter(l => l.status === 'realizado').reduce((acc, l) => ({
+        pax:   acc.pax   + (l.pax   || 0),
+        banq:  acc.banq  + (l.banq  || 0),
+        sala:  acc.sala  + (l.sala  || 0),
+        equip: acc.equip + (l.equip || 0),
+        total: acc.total + (l.total || 0)
+      }), { pax: 0, banq: 0, sala: 0, equip: 0, total: 0 })
+    : null;
+
+  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais, realizadoAteHoje });
 });
 
 app.post('/api/sincronizar', async (req, res) => {
