@@ -543,7 +543,28 @@ async function findEventosXlsx() {
 }
 
 // ── Sincronização ─────────────────────────────────────────────────────────────
-function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmes) {
+function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes) {
+  // No mês corrente, eventos agendados para datas futuras não devem compor o faturamento realizado
+  let eventosmes = eventosmesRaw;
+  if (eventosmesRaw && mes === mesAtualKey()) {
+    const hoje = new Date(); hoje.setHours(23,59,59,999);
+    const linhasPassadas = (eventosmesRaw.linhas || []).filter(l => {
+      if (!l.data) return false;
+      const [dd,mm,yyyy] = l.data.split('/');
+      return new Date(+yyyy, +mm-1, +dd) <= hoje;
+    });
+    const soma = linhasPassadas.reduce((a,l)=>({
+      pax: a.pax+(l.pax||0), banq: a.banq+(l.banq||0), sala: a.sala+(l.sala||0),
+      equip: a.equip+(l.equip||0), total: a.total+(l.total||0)
+    }), {pax:0,banq:0,sala:0,equip:0,total:0});
+    const dailyPassado = {};
+    for (const [data, v] of Object.entries(eventosmesRaw.daily || {})) {
+      const [dd,mm,yyyy] = data.split('/');
+      if (new Date(+yyyy, +mm-1, +dd) <= hoje) dailyPassado[data] = v;
+    }
+    eventosmes = { pax: soma.pax, banq: +soma.banq.toFixed(2), sala: +soma.sala.toFixed(2),
+      equip: +soma.equip.toFixed(2), total: +soma.total.toFixed(2), daily: dailyPassado, linhas: linhasPassadas };
+  }
   const totalRSTdiario = Object.values(vendas.daily).reduce((s,d) => s + (d.RESTAURANTE||0), 0);
   const totalRSdiario  = Object.values(vendas.daily).reduce((s,d) => s + (d['Room Service']||0), 0);
   // Usa bruto+taxa por PDV (acumulado dos TOTAL DO DIA), com fallback nos totais diários
@@ -675,7 +696,7 @@ async function sincronizar() {
     ]);
     const vendas   = parseVendas(vText);
     const ocupacao = parseOcupacao(oText);
-    dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes]);
+    dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes], mes);
   }
 
   const result = { sincAt: new Date().toISOString(), meses, dados, eventosRaw: eventosMap };
@@ -903,15 +924,44 @@ app.get('/api/inventario', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+function mesAtualKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 app.get('/api/eventos', (req, res) => {
   if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
   const store = JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8'));
   const meses = [...new Set([...(store.meses || []), ...Object.keys(store.eventosRaw || {})])].sort().reverse();
-  const mes = req.query.mes || meses[0];
+  const mesAtual = mesAtualKey();
+  const mes = req.query.mes || (meses.includes(mesAtual) ? mesAtual : meses[0]);
   if (!mes) return res.json({ meses: [], mes: null, linhas: [], totais: {} });
   const raw = store.eventosRaw?.[mes];
   if (!raw) return res.json({ meses, mes, linhas: [], totais: { pax:0, banq:0, sala:0, equip:0, total:0 } });
-  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas: raw.linhas || [], totais: { pax: raw.pax, banq: raw.banq, sala: raw.sala, equip: raw.equip, total: raw.total } });
+
+  let linhas = raw.linhas || [];
+  let totais = { pax: raw.pax, banq: raw.banq, sala: raw.sala, equip: raw.equip, total: raw.total };
+
+  // No mês corrente, mostra apenas eventos até a data de hoje (agenda ainda não realizada não deve compor o total)
+  if (mes === mesAtual) {
+    const hoje = new Date();
+    hoje.setHours(23, 59, 59, 999);
+    linhas = linhas.filter(l => {
+      if (!l.data) return false;
+      const [dd, mm, yyyy] = l.data.split('/');
+      return new Date(+yyyy, +mm - 1, +dd) <= hoje;
+    });
+    totais = linhas.reduce((acc, l) => ({
+      pax:   acc.pax   + (l.pax   || 0),
+      banq:  acc.banq  + (l.banq  || 0),
+      sala:  acc.sala  + (l.sala  || 0),
+      equip: acc.equip + (l.equip || 0),
+      total: acc.total + (l.total || 0)
+    }), { pax: 0, banq: 0, sala: 0, equip: 0, total: 0 });
+    totais = { pax: totais.pax, banq: +totais.banq.toFixed(2), sala: +totais.sala.toFixed(2), equip: +totais.equip.toFixed(2), total: +totais.total.toFixed(2) };
+  }
+
+  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais });
 });
 
 app.post('/api/sincronizar', async (req, res) => {
