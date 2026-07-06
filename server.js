@@ -261,7 +261,7 @@ function parseVendas(text) {
       // Estrutura c/ QTD decimal: QTD | BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (7 vals)
       // Estrutura c/ QTD inteiro (RS): BRUTO | DESCONTO | LIQUIDO | TAXA | TOTAL | CUSTO (6 vals)
       // bruto + taxa = totalPago + desconto (identidade matemática, independe do formato)
-      const nums = [...line.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+      const nums = [...line.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
       if (nums.length >= 5) {
         const tp       = nums[nums.length - 2];
         const desconto = nums.length >= 7 ? nums[2]
@@ -275,15 +275,12 @@ function parseVendas(text) {
       // Totalizador geral: linha pode estar quebrada em múltiplas linhas no PDF
       // Junta as próximas 5 linhas para capturar todos os valores
       const bloco = lines.slice(i, i + 6).join(' ');
-      const nums = [...bloco.matchAll(/[\d]+[.,][\d]+/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
-      if (nums.length >= 7) {
-        grand = {
-          valorBruto:   nums[2],
-          desconto:     nums[3],
-          valorLiquido: nums[4],
-          taxaServico:  nums[5],
-          totalPago:    nums[6]
-        };
+      const nums = [...bloco.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+      // As últimas 5 colunas são sempre Bruto|Desconto|Líquido|Taxa|Total Pago,
+      // independente de quantas colunas variáveis (QTD, CUSTO) vierem antes
+      if (nums.length >= 5) {
+        const [valorBruto, desconto, valorLiquido, taxaServico, totalPago] = nums.slice(-5);
+        grand = { valorBruto, desconto, valorLiquido, taxaServico, totalPago };
       }
     }
   }
