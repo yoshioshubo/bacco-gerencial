@@ -18,6 +18,7 @@ const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
+const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
 const PORT         = process.env.PORT || 3001;
@@ -532,6 +533,100 @@ function extractXlsxImages(buffer) {
   return result;
 }
 
+// ── Parser CAEd (check-in/check-out → diárias dia a dia) ─────────────────────
+const CAED_ANO_PADRAO = 2026;
+const CAED_RATE = {
+  'SEM PENSAO': 0, 'MEIA PENSAO': 55, 'PENSAO COMPLETA': 110
+};
+
+function normalizaTexto(s) {
+  return String(s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function parseDataDDMM(v, anoDefault) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') {
+    const serial = Math.round(v);
+    const dt = new Date((serial - 25569) * 86400 * 1000);
+    return new Date(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+  }
+  const m = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (!m) return null;
+  const dd = +m[1], mm = +m[2];
+  const yr = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : anoDefault;
+  return new Date(yr, mm - 1, dd);
+}
+
+// Preenche células mescladas com o valor da célula superior-esquerda, para que
+// reservas com Check-in/Check-out mesclados em várias linhas (um hóspede por linha) sejam lidas corretamente.
+function expandirMescladas(sheet) {
+  const merges = sheet['!merges'] || [];
+  for (const range of merges) {
+    const topLeftAddr = XLSX.utils.encode_cell({ r: range.s.r, c: range.s.c });
+    const topLeftCell = sheet[topLeftAddr];
+    if (!topLeftCell) continue;
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        if (r === range.s.r && c === range.s.c) continue;
+        const addr = XLSX.utils.encode_cell({ r, c });
+        sheet[addr] = { ...topLeftCell };
+      }
+    }
+  }
+}
+
+function parseCaed(buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const porMes = {}; // { 'YYYY-MM': { 'dd/mm/yyyy': { pessoas, faturamento } } }
+
+  for (const sheetName of wb.SheetNames) {
+    const sheet = wb.Sheets[sheetName];
+    expandirMescladas(sheet);
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+
+    for (const row of rows) {
+      const col0 = normalizaTexto(row[0]);
+      if (col0 === 'RESERVA') continue; // linha de cabeçalho (pode se repetir várias vezes na planilha)
+
+      const nomeCel = String(row[1] || '').trim();
+      if (!nomeCel) continue;
+      const checkin  = parseDataDDMM(row[2], CAED_ANO_PADRAO);
+      const checkout = parseDataDDMM(row[3], CAED_ANO_PADRAO);
+      if (!checkin || !checkout || checkout <= checkin) continue;
+
+      const tipoPensao = normalizaTexto(row[5]);
+      const rate = CAED_RATE[tipoPensao] ?? 0;
+      const nomes = nomeCel.split('\n').map(n => n.trim()).filter(Boolean);
+      const qtdPessoas = nomes.length || 1;
+
+      // Cada noite de [checkin, checkout) conta como uma diária (checkout não é contado)
+      for (let d = new Date(checkin); d < checkout; d.setDate(d.getDate() + 1)) {
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const mesKeyStr = `${yyyy}-${mm}`;
+        const dataStr = `${dd}/${mm}/${yyyy}`;
+        if (!porMes[mesKeyStr]) porMes[mesKeyStr] = {};
+        if (!porMes[mesKeyStr][dataStr]) porMes[mesKeyStr][dataStr] = { pessoas: 0, faturamento: 0 };
+        porMes[mesKeyStr][dataStr].pessoas += qtdPessoas;
+        porMes[mesKeyStr][dataStr].faturamento += rate * qtdPessoas;
+      }
+    }
+  }
+
+  const result = {};
+  for (const [mesKeyStr, daily] of Object.entries(porMes)) {
+    let totalPessoas = 0, totalFaturamento = 0;
+    for (const v of Object.values(daily)) {
+      v.faturamento = +v.faturamento.toFixed(2);
+      totalPessoas += v.pessoas;
+      totalFaturamento += v.faturamento;
+    }
+    result[mesKeyStr] = { daily, totalPessoas, totalFaturamento: +totalFaturamento.toFixed(2) };
+  }
+  return result;
+}
+
 async function findEventosXlsx() {
   // Busca na pasta compartilhada e também em My Drive
   const q = encodeURIComponent(`'${EVENTOS_FOLDER}' in parents and trashed=false and (mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or mimeType='application/vnd.ms-excel')`);
@@ -540,7 +635,7 @@ async function findEventosXlsx() {
 }
 
 // ── Sincronização ─────────────────────────────────────────────────────────────
-function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes) {
+function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes, caedMes) {
   // No mês corrente, eventos agendados para datas futuras não devem compor o faturamento realizado
   let eventosmes = eventosmesRaw;
   if (eventosmesRaw && mes === mesAtualKey()) {
@@ -601,10 +696,13 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes) {
   const eventosEquip    = eventosmes?.equip || 0;
   const eventosBanq     = eventosmes?.banq  || 0;
   const receitaEventos  = eventosmes?.total || eventosBanq;
-  const totalGeral      = +(totalPago + receitaCafe + receitaEventos).toFixed(2);
-  const totalClientes   = clientes + clientesCafe + clientesEventos;
+  const clientesCaed    = caedMes?.totalPessoas     || 0;
+  const receitaCaed     = +(caedMes?.totalFaturamento || 0).toFixed(2);
+  const totalGeral      = +(totalPago + receitaCafe + receitaEventos + receitaCaed).toFixed(2);
+  const totalClientes   = clientes + clientesCafe + clientesEventos + clientesCaed;
   const ticketCafe      = clientesCafe    > 0 ? Math.round(receitaCafe    / clientesCafe)             : 0;
   const ticketEventos   = clientesEventos > 0 ? +(receitaEventos / clientesEventos).toFixed(2)       : 0;
+  const ticketCaed      = clientesCaed    > 0 ? +(receitaCaed    / clientesCaed   ).toFixed(2)       : 0;
   const ticketGeral     = totalClientes   > 0 ? +(totalGeral     / totalClientes  ).toFixed(2)       : 0;
   const kpiCobertura    = hospedes > 0 ? vendas.notas['Room Service'] / hospedes : 0;
 
@@ -621,18 +719,21 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes) {
     eventosSala,
     eventosEquip,
     eventosBanq,
+    receitaCaed,
     faturamentoTotal:     totalGeral,
     // Clientes por canal
     clientesBacco:        vendas.notas.RESTAURANTE,
     clientesRoomService:  vendas.notas['Room Service'],
     clientesCafe,
     clientesEventos,
+    clientesCaed,
     clientesTotal:        totalClientes,
     // Tickets por canal
     ticketRST:            vendas.notas.RESTAURANTE > 0 ? +(totalRST/vendas.notas.RESTAURANTE).toFixed(2) : 0,
     ticketRS:             vendas.notas['Room Service'] > 0 ? +(totalRS/vendas.notas['Room Service']).toFixed(2) : 0,
     ticketCafe,
     ticketEventos,
+    ticketCaed,
     ticketGeral,
     // Legado / resumo financeiro
     hospedes,
@@ -679,6 +780,13 @@ async function sincronizar() {
     }
   } catch(e) { console.warn('[Eventos]', e.message); }
 
+  // Baixa e parseia a planilha do CAEd (check-in/check-out)
+  let caedMap = {};
+  try {
+    const caedBuf = await downloadFile(CAED_FILE_ID);
+    caedMap = parseCaed(caedBuf);
+  } catch(e) { console.warn('[CAEd]', e.message); }
+
   const dados = {};
   for (const mes of meses) {
     const vf = vendaMap[mes];
@@ -693,15 +801,24 @@ async function sincronizar() {
     ]);
     const vendas   = parseVendas(vText);
     const ocupacao = parseOcupacao(oText);
-    dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes], mes);
+    dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes], mes, caedMap[mes]);
   }
 
-  const result = { sincAt: new Date().toISOString(), meses, dados, eventosRaw: eventosMap };
+  const result = { sincAt: new Date().toISOString(), meses, dados, eventosRaw: eventosMap, caedRaw: caedMap };
   fs.writeFileSync(RESULT_FILE, JSON.stringify(result, null, 2));
   return result;
 }
 
 // ── Debug Inventário ──────────────────────────────────────────────────────────
+app.get('/api/debug-caed', async (req, res) => {
+  try {
+    const buf = await downloadFile(CAED_FILE_ID);
+    const resultado = parseCaed(buf);
+    const mes = req.query.mes || Object.keys(resultado).sort().reverse()[0];
+    res.json({ mesesEncontrados: Object.keys(resultado).sort(), mesExibido: mes, dados: resultado[mes] || null });
+  } catch(e) { res.status(500).json({ erro: e.message }); }
+});
+
 app.get('/api/debug-inventario', async (req, res) => {
   try {
     const buf = await downloadFile(INVENTARIO_FILE_ID);

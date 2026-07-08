@@ -51,8 +51,8 @@
   /* ── KPI cards ── */
   .kpi-section{margin-bottom:1rem}
   .kpi-section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;padding-left:2px}
-  .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-  @media(max-width:900px){.kpi-row{grid-template-columns:repeat(3,1fr)}}
+  .kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  @media(max-width:1000px){.kpi-row{grid-template-columns:repeat(3,1fr)}}
   @media(max-width:560px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--surface);border:.5px solid var(--border);border-radius:10px;padding:14px 16px}
   .kpi.g{background:var(--green-bg);border-color:transparent}
@@ -258,7 +258,8 @@ function render(d){
         <div class="kpi g"><div class="kl">Room Service</div><div class="kv">${BRL(d.faturamentoRS)}</div><div class="ks">vendas no período</div></div>
         <div class="kpi g"><div class="kl">Café da Manhã</div><div class="kv">${BRL(d.receitaCafe)}</div><div class="ks">receita hospedagem</div></div>
         <div class="kpi g"><div class="kl">Eventos</div><div class="kv">${BRL(d.receitaEventos)}</div><div class="ks">sem dados</div></div>
-        <div class="kpi g tot"><div class="kl">Total</div><div class="kv">${BRL(d.faturamentoTotal)}</div><div class="ks">RST + RS + Café + Eventos</div></div>
+        <div class="kpi g"><div class="kl">CAEd</div><div class="kv">${BRL(d.receitaCaed)}</div><div class="ks">diárias no período</div></div>
+        <div class="kpi g tot"><div class="kl">Total</div><div class="kv">${BRL(d.faturamentoTotal)}</div><div class="ks">RST + RS + Café + Eventos + CAEd</div></div>
       </div>
     </div>
 
@@ -269,7 +270,8 @@ function render(d){
         <div class="kpi b"><div class="kl">Room Service</div><div class="kv">${R(d.clientesRoomService)}</div><div class="ks">comandas abertas</div></div>
         <div class="kpi b"><div class="kl">Café da Manhã</div><div class="kv">${R(d.clientesCafe)}</div><div class="ks">hóspedes · média ${hosped_media}/dia</div></div>
         <div class="kpi b"><div class="kl">Eventos</div><div class="kv">${R(d.clientesEventos)}</div><div class="ks">sem dados</div></div>
-        <div class="kpi b tot"><div class="kl">Total</div><div class="kv">${R(d.clientesTotal)}</div><div class="ks">RST + RS + Café + Eventos</div></div>
+        <div class="kpi b"><div class="kl">CAEd</div><div class="kv">${R(d.clientesCaed)}</div><div class="ks">diárias no período</div></div>
+        <div class="kpi b tot"><div class="kl">Total</div><div class="kv">${R(d.clientesTotal)}</div><div class="ks">RST + RS + Café + Eventos + CAEd</div></div>
       </div>
     </div>
 
@@ -280,6 +282,7 @@ function render(d){
         <div class="kpi a"><div class="kl">Room Service</div><div class="kv">${BRL(d.ticketRS)}</div><div class="ks">por comanda</div></div>
         <div class="kpi a"><div class="kl">Café da Manhã</div><div class="kv">${BRL(d.ticketCafe)}</div><div class="ks">por hóspede</div></div>
         <div class="kpi a"><div class="kl">Eventos</div><div class="kv">${d.clientesEventos>0?BRL(d.ticketEventos):'—'}</div><div class="ks">sem dados</div></div>
+        <div class="kpi a"><div class="kl">CAEd</div><div class="kv">${d.clientesCaed>0?BRL(d.ticketCaed):'—'}</div><div class="ks">por diária</div></div>
         <div class="kpi a tot"><div class="kl">Total</div><div class="kv">${BRL(d.ticketGeral)}</div><div class="ks">ticket geral</div></div>
       </div>
     </div>
