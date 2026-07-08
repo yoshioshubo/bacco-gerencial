@@ -586,9 +586,16 @@ function expandirMescladas(sheet) {
   }
 }
 
+const TIPO_LABEL = { 'SEM PENSAO': 'Sem Pensão', 'MEIA PENSAO': 'Meia Pensão', 'PENSAO COMPLETA': 'Pensão Completa' };
+
 function parseCaed(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
-  const porMes = {}; // { 'YYYY-MM': { 'dd/mm/yyyy': { pessoas, faturamento } } }
+  const porMes = {}; // { 'YYYY-MM': { daily: {...}, linhas: [...] } }
+
+  const getMes = mesKeyStr => {
+    if (!porMes[mesKeyStr]) porMes[mesKeyStr] = { daily: {}, linhas: [] };
+    return porMes[mesKeyStr];
+  };
 
   for (const sheetName of wb.SheetNames) {
     const sheet = wb.Sheets[sheetName];
@@ -607,33 +614,59 @@ function parseCaed(buffer) {
 
       const tipoPensao = normalizaTexto(row[5]);
       const rate = CAED_RATE[tipoPensao] ?? 0;
+      const status = String(row[6] || '').trim();
       const nomes = nomeCel.split('\n').map(n => n.trim()).filter(Boolean);
       const qtdPessoas = nomes.length || 1;
+      const totalNoites = Math.round((checkout - checkin) / 86400000);
+
+      // Uma linha por hóspede na tabela da aba CAEd, no mês do check-in
+      const dd0 = String(checkin.getDate()).padStart(2, '0');
+      const mm0 = String(checkin.getMonth() + 1).padStart(2, '0');
+      const yyyy0 = checkin.getFullYear();
+      const dd1 = String(checkout.getDate()).padStart(2, '0');
+      const mm1 = String(checkout.getMonth() + 1).padStart(2, '0');
+      const yyyy1 = checkout.getFullYear();
+      const mesCheckin = getMes(`${yyyy0}-${mm0}`);
+      for (const nome of nomes) {
+        mesCheckin.linhas.push({
+          nome, checkin: `${dd0}/${mm0}/${yyyy0}`, checkout: `${dd1}/${mm1}/${yyyy1}`,
+          diarias: totalNoites, tipoPensao: TIPO_LABEL[tipoPensao] || (row[5] || '—'),
+          valor: +(totalNoites * rate).toFixed(2), status
+        });
+      }
 
       // Cada noite de [checkin, checkout) conta como uma diária (checkout não é contado)
       for (let d = new Date(checkin); d < checkout; d.setDate(d.getDate() + 1)) {
         const dd = String(d.getDate()).padStart(2, '0');
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const yyyy = d.getFullYear();
-        const mesKeyStr = `${yyyy}-${mm}`;
+        const mesAtual = getMes(`${yyyy}-${mm}`);
         const dataStr = `${dd}/${mm}/${yyyy}`;
-        if (!porMes[mesKeyStr]) porMes[mesKeyStr] = {};
-        if (!porMes[mesKeyStr][dataStr]) porMes[mesKeyStr][dataStr] = { pessoas: 0, faturamento: 0 };
-        porMes[mesKeyStr][dataStr].pessoas += qtdPessoas;
-        porMes[mesKeyStr][dataStr].faturamento += rate * qtdPessoas;
+        if (!mesAtual.daily[dataStr]) mesAtual.daily[dataStr] = { pessoas: 0, faturamento: 0, semPensao: 0, meiaPensao: 0, pensaoCompleta: 0 };
+        const dia = mesAtual.daily[dataStr];
+        dia.pessoas += qtdPessoas;
+        dia.faturamento += rate * qtdPessoas;
+        if (tipoPensao === 'SEM PENSAO') dia.semPensao += qtdPessoas;
+        else if (tipoPensao === 'MEIA PENSAO') dia.meiaPensao += qtdPessoas;
+        else if (tipoPensao === 'PENSAO COMPLETA') dia.pensaoCompleta += qtdPessoas;
       }
     }
   }
 
   const result = {};
-  for (const [mesKeyStr, daily] of Object.entries(porMes)) {
-    let totalPessoas = 0, totalFaturamento = 0;
+  for (const [mesKeyStr, { daily, linhas }] of Object.entries(porMes)) {
+    let totalPessoas = 0, totalFaturamento = 0, semPensao = 0, meiaPensao = 0, pensaoCompleta = 0;
     for (const v of Object.values(daily)) {
       v.faturamento = +v.faturamento.toFixed(2);
       totalPessoas += v.pessoas;
       totalFaturamento += v.faturamento;
+      semPensao += v.semPensao; meiaPensao += v.meiaPensao; pensaoCompleta += v.pensaoCompleta;
     }
-    result[mesKeyStr] = { daily, totalPessoas, totalFaturamento: +totalFaturamento.toFixed(2) };
+    linhas.sort((a, b) => a.checkin.split('/').reverse().join('').localeCompare(b.checkin.split('/').reverse().join('')));
+    result[mesKeyStr] = {
+      daily, linhas, totalPessoas, semPensao, meiaPensao, pensaoCompleta,
+      totalFaturamento: +totalFaturamento.toFixed(2)
+    };
   }
   return result;
 }
@@ -1024,6 +1057,7 @@ app.get('/api/dados', (req, res) => {
 
 app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
 app.get('/inventario', (req, res) => res.sendFile(path.join(__dirname, 'public', 'inventario.html')));
+app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
 
 app.get('/api/inventario', async (req, res) => {
   try {
@@ -1101,6 +1135,46 @@ app.get('/api/eventos', (req, res) => {
         equip: acc.equip + (l.equip || 0),
         total: acc.total + (l.total || 0)
       }), { pax: 0, banq: 0, sala: 0, equip: 0, total: 0 })
+    : null;
+
+  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais, realizadoAteHoje });
+});
+
+app.get('/api/caed', (req, res) => {
+  if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
+  const store = JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8'));
+  const meses = [...new Set([...(store.meses || []), ...Object.keys(store.caedRaw || {})])].sort().reverse();
+  const mesAtual = mesAtualKey();
+  const mes = req.query.mes || (meses.includes(mesAtual) ? mesAtual : meses[0]);
+  if (!mes) return res.json({ meses: [], mes: null, linhas: [], totais: {} });
+  const raw = store.caedRaw?.[mes];
+  if (!raw) return res.json({ meses, mes, linhas: [], totais: { pessoas:0, semPensao:0, meiaPensao:0, pensaoCompleta:0, faturamento:0 } });
+
+  const totais = {
+    pessoas: raw.totalPessoas, semPensao: raw.semPensao, meiaPensao: raw.meiaPensao,
+    pensaoCompleta: raw.pensaoCompleta, faturamento: raw.totalFaturamento
+  };
+
+  // Marca cada hóspede como já realizado ou ainda agendado (só é relevante no mês corrente)
+  const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+  const linhas = (raw.linhas || []).map(l => {
+    let status = 'realizado';
+    if (l.checkin) {
+      const [dd, mm, yyyy] = l.checkin.split('/');
+      if (new Date(+yyyy, +mm - 1, +dd) > hoje) status = 'agendado';
+    }
+    return { ...l, status };
+  });
+
+  const realizadoAteHoje = mes === mesAtual
+    ? (() => {
+        let pessoas = 0, faturamento = 0;
+        for (const [dataStr, v] of Object.entries(raw.daily || {})) {
+          const [dd, mm, yyyy] = dataStr.split('/');
+          if (new Date(+yyyy, +mm - 1, +dd) <= hoje) { pessoas += v.pessoas; faturamento += v.faturamento; }
+        }
+        return { pessoas, faturamento: +faturamento.toFixed(2) };
+      })()
     : null;
 
   res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais, realizadoAteHoje });
