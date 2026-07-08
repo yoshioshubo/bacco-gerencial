@@ -554,14 +554,20 @@ function normalizaTexto(s) {
   return String(s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+function serialParaData(serial) {
+  const dt = new Date((serial - 25569) * 86400 * 1000);
+  return new Date(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+}
+
 function parseDataDDMM(v, anoDefault) {
   if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number') {
-    const serial = Math.round(v);
-    const dt = new Date((serial - 25569) * 86400 * 1000);
-    return new Date(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
-  }
-  const m = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (typeof v === 'number') return serialParaData(Math.round(v));
+
+  const s = String(v).trim();
+  // Célula com data "real" do Excel/Sheets renderizada como número puro (raw:false não formatou como data)
+  if (/^\d{4,6}(\.\d+)?$/.test(s)) return serialParaData(Math.round(parseFloat(s)));
+
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
   if (!m) return null;
   const dd = +m[1], mm = +m[2];
   const yr = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : anoDefault;
