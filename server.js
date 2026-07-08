@@ -233,6 +233,17 @@ async function downloadFile(fileId) {
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  if (status === 403 || status === 400) {
+    // Provavelmente é uma planilha nativa do Google Sheets (não um .xlsx real) — precisa exportar em vez de baixar
+    const token2 = await getToken();
+    const exportMime = encodeURIComponent('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const exportRes = await req(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${exportMime}`,
+      { headers: { Authorization: `Bearer ${token2}` } }
+    );
+    if (exportRes.status !== 200) throw new Error(`Download falhou HTTP ${status} (export também falhou: ${exportRes.status})`);
+    return exportRes.body;
+  }
   if (status !== 200) throw new Error(`Download falhou HTTP ${status}`);
   return body;
 }
