@@ -1185,7 +1185,11 @@ app.get('/api/caed', (req, res) => {
       })()
     : null;
 
-  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais, realizadoAteHoje });
+  const daily = Object.entries(raw.daily || {})
+    .map(([data, v]) => ({ data, semPensao: v.semPensao, meiaPensao: v.meiaPensao, pensaoCompleta: v.pensaoCompleta }))
+    .sort((a, b) => a.data.split('/').reverse().join('').localeCompare(b.data.split('/').reverse().join('')));
+
+  res.json({ meses, mes, mesLabel: mesLabel(mes), linhas, totais, realizadoAteHoje, daily });
 });
 
 app.post('/api/sincronizar', async (req, res) => {

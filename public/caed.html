@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CAEd — Victory Business</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   :root {
     --bg:#f4f4f2; --surface:#fff; --border:rgba(0,0,0,.09); --text:#1a1a18;
@@ -44,6 +45,10 @@
   .rcard .val{font-size:22px;font-weight:500;color:var(--text)}
   .rcard .sub{font-size:11px;color:var(--hint);margin-top:2px}
 
+  .chart-card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:1rem 1.25rem;margin-bottom:1.25rem}
+  .ct{font-size:13px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;text-align:center}
+  .leg{display:flex;gap:14px;justify-content:center;margin-bottom:10px;font-size:12px;color:var(--muted)}
+  .leg .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
   .tcard{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden}
   table{width:100%;border-collapse:collapse;font-size:13px}
   thead th{background:var(--bg);padding:10px 14px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:.5px solid var(--border);white-space:nowrap}
@@ -96,6 +101,16 @@
     <div class="lbl">Realizado até hoje</div>
     <div class="val" id="rRealizado" style="color:var(--blue-dk)">—</div>
     <div class="sub" id="rRealizadoSub"></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="ct">Atendimentos por dia — Meia Pensão x Pensão Completa</div>
+    <div class="leg">
+      <span><span class="dot" style="background:#85B7EB"></span>Meia Pensão</span>
+      <span><span class="dot" style="background:#1D9E75"></span>Pensão Completa</span>
+      <span><span class="dot" style="background:#C97A2B"></span>Sem Pensão</span>
+    </div>
+    <div style="position:relative;height:220px"><canvas id="cDiario" role="img" aria-label="Diárias por dia"></canvas></div>
   </div>
 
   <div class="tcard">
@@ -157,6 +172,8 @@ async function carregar(mes) {
     rc.style.display = 'none';
   }
 
+  desenharGrafico(d.daily || []);
+
   const tbody = document.getElementById('tbody');
   const tfoot = document.getElementById('tfoot');
   const linhas = d.linhas || [];
@@ -190,6 +207,35 @@ async function carregar(mes) {
 function trocarMes() {
   const sel = document.getElementById('mesSel');
   carregar(sel.value);
+}
+
+let chartDiario = null;
+function desenharGrafico(daily) {
+  const dark = matchMedia('(prefers-color-scheme:dark)').matches;
+  const tc = dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.65)';
+  const gc = dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)';
+  const labels = daily.map(d => d.data.slice(0,5));
+
+  if (chartDiario) chartDiario.destroy();
+  chartDiario = new Chart(document.getElementById('cDiario'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Meia Pensão',     data: daily.map(d => d.meiaPensao),     backgroundColor: '#85B7EB', borderRadius: 2, stack: 's' },
+        { label: 'Pensão Completa', data: daily.map(d => d.pensaoCompleta), backgroundColor: '#1D9E75', borderRadius: 2, stack: 's' },
+        { label: 'Sem Pensão',      data: daily.map(d => d.semPensao),      backgroundColor: '#C97A2B', borderRadius: 2, stack: 's' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { color: tc, font: { size: 10, weight: '500' }, maxRotation: 45, autoSkip: false } },
+        y: { stacked: true, grid: { color: gc }, border: { display: false }, ticks: { color: tc, font: { size: 10 }, stepSize: 1 } }
+      }
+    }
+  });
 }
 
 carregar();
