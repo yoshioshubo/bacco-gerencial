@@ -622,7 +622,8 @@ function parseCaed(buffer) {
       const rate = CAED_RATE[tipoPensao] ?? 0;
       const status = String(row[6] || '').trim();
       const nomes = nomeCel.split('\n').map(n => n.trim()).filter(Boolean);
-      const qtdPessoas = nomes.length || 1;
+      // Diária é contada por RESERVA (quarto), não por hóspede — reservas com 2+ nomes
+      // compartilham o mesmo quarto/diária, então não deve multiplicar pela qtd de pessoas
       const totalNoites = Math.round((checkout - checkin) / 86400000);
 
       // Uma linha por hóspede na tabela da aba CAEd, no mês do check-in
@@ -650,11 +651,11 @@ function parseCaed(buffer) {
         const dataStr = `${dd}/${mm}/${yyyy}`;
         if (!mesAtual.daily[dataStr]) mesAtual.daily[dataStr] = { pessoas: 0, faturamento: 0, semPensao: 0, meiaPensao: 0, pensaoCompleta: 0 };
         const dia = mesAtual.daily[dataStr];
-        dia.pessoas += qtdPessoas;
-        dia.faturamento += rate * qtdPessoas;
-        if (tipoPensao === 'SEM PENSAO') dia.semPensao += qtdPessoas;
-        else if (tipoPensao === 'MEIA PENSAO') dia.meiaPensao += qtdPessoas;
-        else if (tipoPensao === 'PENSAO COMPLETA') dia.pensaoCompleta += qtdPessoas;
+        dia.pessoas += 1;
+        dia.faturamento += rate;
+        if (tipoPensao === 'SEM PENSAO') dia.semPensao += 1;
+        else if (tipoPensao === 'MEIA PENSAO') dia.meiaPensao += 1;
+        else if (tipoPensao === 'PENSAO COMPLETA') dia.pensaoCompleta += 1;
       }
     }
   }
