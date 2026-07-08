@@ -741,23 +741,9 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes, c
   const eventosBanq     = eventosmes?.banq  || 0;
   const receitaEventos  = eventosmes?.total || eventosBanq;
 
-  // CAEd conta apenas do dia 1 até a última data do período do relatório (mesma data-corte usada no cabeçalho do dashboard)
-  let clientesCaed = 0, receitaCaed = 0;
-  if (caedMes?.daily) {
-    let dataCorte = null;
-    if (allDates.length) {
-      const [dd, mm, yyyy] = allDates[allDates.length - 1].split('/');
-      dataCorte = new Date(+yyyy, +mm - 1, +dd);
-    }
-    for (const [dataStr, v] of Object.entries(caedMes.daily)) {
-      const [dd, mm, yyyy] = dataStr.split('/');
-      const dataAtual = new Date(+yyyy, +mm - 1, +dd);
-      if (dataCorte && dataAtual > dataCorte) continue;
-      clientesCaed += v.pessoas;
-      receitaCaed  += v.faturamento;
-    }
-  }
-  receitaCaed = +receitaCaed.toFixed(2);
+  // CAEd conta o mês completo (mesma lógica dos cards principais da aba CAEd)
+  const clientesCaed = caedMes?.totalPessoas     || 0;
+  const receitaCaed  = +(caedMes?.totalFaturamento || 0).toFixed(2);
   const totalGeral      = +(totalPago + receitaCafe + receitaEventos + receitaCaed).toFixed(2);
   const totalClientes   = clientes + clientesCafe + clientesEventos + clientesCaed;
   const ticketCafe      = clientesCafe    > 0 ? Math.round(receitaCafe    / clientesCafe)             : 0;
