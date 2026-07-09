@@ -19,6 +19,7 @@ const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
+const CONSUMO_FOLDER_ID = process.env.CONSUMO_FOLDER_ID || '1gsvjga8clKukuN-S5AEWZHY6pHHT0RUn';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
 const PORT         = process.env.PORT || 3001;
@@ -981,6 +982,31 @@ app.get('/api/debug-eventos', async (req, res) => {
 });
 
 // ── Debug arquivos ────────────────────────────────────────────────────────────
+app.get('/api/debug-consumo', async (req, res) => {
+  try {
+    const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime desc&corpora=allDrives`);
+    const arquivos = d.files || [];
+    if (!arquivos.length) return res.json({ arquivos: [] });
+
+    const maisRecente = arquivos[0];
+    const buf = await downloadFile(maisRecente.id);
+
+    let textoOuInfo;
+    if (maisRecente.mimeType === 'application/pdf') {
+      const parsed = await pdfParse(buf);
+      textoOuInfo = { tipo: 'pdf', texto: parsed.text.substring(0, 3000) };
+    } else if (maisRecente.mimeType.includes('spreadsheet') || maisRecente.mimeType.includes('excel')) {
+      const wb = XLSX.read(buf, { type: 'buffer' });
+      textoOuInfo = { tipo: 'xlsx', abas: wb.SheetNames.map(s => ({ nome: s, linhas: XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, defval: '' }).slice(0, 30) })) };
+    } else {
+      textoOuInfo = { tipo: maisRecente.mimeType, aviso: 'Tipo de arquivo não tratado no debug ainda.' };
+    }
+
+    res.json({ arquivos, maisRecente: maisRecente.name, conteudo: textoOuInfo });
+  } catch(e) { res.status(500).json({ erro: e.message }); }
+});
+
 app.get('/api/debug-arquivos', async (req, res) => {
   try {
     const [vendaDir, ocupDir] = await Promise.all([
