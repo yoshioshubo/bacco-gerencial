@@ -1005,7 +1005,7 @@ async function findArquivoConsumoMaisRecente(prefixo) {
 
 // ── Parser GASMIG (consumo de gás por período de leitura) ────────────────────
 function parseGasmigTexto(texto) {
-  const numRe = /\d{1,3}(?:\.\d{3})*,\d{2,3}/g;
+  const numRe = /\d{1,3}(?:\.\d{3})*,\d{2,4}/g;
 
   // Período de faturamento atual (a linha "Período" seguida de "dd/mm/aa a dd/mm/aa")
   const atualMatch = texto.match(/Per[ií]odo\s*\n(\d{2})\/(\d{2})\/(\d{2})\s*a\s*(\d{2})\/(\d{2})\/(\d{2})/);
