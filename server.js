@@ -982,28 +982,28 @@ app.get('/api/debug-eventos', async (req, res) => {
 });
 
 // ── Debug arquivos ────────────────────────────────────────────────────────────
+function parseConsumoFilename(name) {
+  // Espera nomes como "GASMIG 072026.PDF" → mm=07, yyyy=2026
+  const m = String(name).match(/(\d{2})\s*(\d{4})/);
+  if (!m) return null;
+  const mm = +m[1], yyyy = +m[2];
+  if (mm < 1 || mm > 12) return null;
+  return `${yyyy}-${String(mm).padStart(2,'0')}`;
+}
+
 app.get('/api/debug-consumo', async (req, res) => {
   try {
-    const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false`);
-    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime desc&corpora=allDrives`);
-    const arquivos = d.files || [];
-    if (!arquivos.length) return res.json({ arquivos: [] });
+    const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false and mimeType='application/pdf'`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType,modifiedTime)&corpora=allDrives`);
+    const arquivos = (d.files || []).map(f => ({ ...f, mesKey: parseConsumoFilename(f.name) })).filter(f => f.mesKey);
+    if (!arquivos.length) return res.json({ arquivos: [], aviso: 'Nenhum PDF com padrão de nome MMAAAA encontrado.' });
 
+    arquivos.sort((a,b) => b.mesKey.localeCompare(a.mesKey));
     const maisRecente = arquivos[0];
     const buf = await downloadFile(maisRecente.id);
+    const parsed = await pdfParse(buf);
 
-    let textoOuInfo;
-    if (maisRecente.mimeType === 'application/pdf') {
-      const parsed = await pdfParse(buf);
-      textoOuInfo = { tipo: 'pdf', texto: parsed.text.substring(0, 3000) };
-    } else if (maisRecente.mimeType.includes('spreadsheet') || maisRecente.mimeType.includes('excel')) {
-      const wb = XLSX.read(buf, { type: 'buffer' });
-      textoOuInfo = { tipo: 'xlsx', abas: wb.SheetNames.map(s => ({ nome: s, linhas: XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, defval: '' }).slice(0, 30) })) };
-    } else {
-      textoOuInfo = { tipo: maisRecente.mimeType, aviso: 'Tipo de arquivo não tratado no debug ainda.' };
-    }
-
-    res.json({ arquivos, maisRecente: maisRecente.name, conteudo: textoOuInfo });
+    res.json({ arquivos, maisRecente: maisRecente.name, mesKey: maisRecente.mesKey, texto: parsed.text });
   } catch(e) { res.status(500).json({ erro: e.message }); }
 });
 
