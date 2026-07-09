@@ -829,11 +829,17 @@ async function sincronizar() {
     allPdfs(ocupDir.id)
   ]);
 
-  // Group by mes key derived from filename
+  // Group by mes key derived from filename — em caso de duplicidade, mantém o mais recentemente modificado
   const vendaMap = {};
-  for (const f of vendaPdfs) { const k = mesKey(f.name); if (k) vendaMap[k] = f; }
+  for (const f of vendaPdfs) {
+    const k = mesKey(f.name);
+    if (k && (!vendaMap[k] || f.modifiedTime > vendaMap[k].modifiedTime)) vendaMap[k] = f;
+  }
   const ocupMap  = {};
-  for (const f of ocupPdfs)  { const k = mesKey(f.name); if (k) ocupMap[k]  = f; }
+  for (const f of ocupPdfs) {
+    const k = mesKey(f.name);
+    if (k && (!ocupMap[k] || f.modifiedTime > ocupMap[k].modifiedTime)) ocupMap[k] = f;
+  }
 
   const meses = [...new Set([...Object.keys(vendaMap), ...Object.keys(ocupMap)])].sort().reverse();
   if (!meses.length) throw new Error('Nenhum PDF encontrado nas pastas VENDAS / OCUPAÇÃO.');
