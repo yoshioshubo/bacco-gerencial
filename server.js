@@ -991,16 +991,20 @@ function parseConsumoFilename(name) {
   return `${yyyy}-${String(mm).padStart(2,'0')}`;
 }
 
-async function findArquivoConsumoMaisRecente(prefixo) {
+async function listaArquivosConsumo(prefixo) {
   const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false and mimeType='application/pdf'`);
   const d = await driveGet(`files?q=${q}&fields=files(id,name,modifiedTime)&corpora=allDrives`);
   const arquivos = (d.files || [])
     .filter(f => normalizaTexto(f.name).startsWith(prefixo))
     .map(f => ({ ...f, mesKey: parseConsumoFilename(f.name) }))
     .filter(f => f.mesKey);
-  if (!arquivos.length) return null;
   arquivos.sort((a, b) => b.mesKey.localeCompare(a.mesKey));
-  return arquivos[0];
+  return arquivos;
+}
+
+async function findArquivoConsumoMaisRecente(prefixo) {
+  const arquivos = await listaArquivosConsumo(prefixo);
+  return arquivos[0] || null;
 }
 
 // ── Parser GASMIG (consumo de gás por período de leitura) ────────────────────
@@ -1021,7 +1025,11 @@ function parseGasmigTexto(texto) {
       const nums = [...trecho.matchAll(numRe)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
       if (nums.length) consumo = nums[nums.length - 1];
     }
-    if (consumo !== null) periodoAtual = { inicio, fim, consumo };
+    let totalPagar = null;
+    const totalMatch = texto.match(/Total a pagar\s*\nR\$\s*([\d.,]+)/);
+    if (totalMatch) totalPagar = parseFloat(totalMatch[1].replace(/\./g,'').replace(',','.'));
+
+    if (consumo !== null) periodoAtual = { inicio, fim, consumo, totalPagar };
   }
 
   // Tabela HISTÓRICO (períodos anteriores)
@@ -1065,8 +1073,22 @@ app.get('/api/concessionarias', async (req, res) => {
   try {
     if (tipo !== 'gasmig') return res.json({ tipo, periodos: [], aviso: 'Ainda não configurado.' });
 
-    const arquivo = await findArquivoConsumoMaisRecente('GASMIG');
-    if (!arquivo) return res.json({ tipo, periodos: [], aviso: 'Nenhum PDF da GASMIG encontrado na pasta.' });
+    const arquivos = await listaArquivosConsumo('GASMIG');
+    if (!arquivos.length) return res.json({ tipo, periodos: [], aviso: 'Nenhum PDF da GASMIG encontrado na pasta.' });
+    const arquivo = arquivos[0];
+
+    const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+
+    // Baixa todas as faturas para pegar o "Total a pagar" de cada uma (a tabela HISTÓRICO da última fatura só tem consumo, sem valor em R$)
+    const valoresPorPeriodo = {};
+    for (const f of arquivos) {
+      try {
+        const bufF = await downloadFile(f.id);
+        const textoF = await pdfParse(bufF).then(r => r.text);
+        const pF = parseGasmigTexto(textoF)[0]; // período atual dessa fatura específica
+        if (pF && pF.totalPagar !== null) valoresPorPeriodo[`${fmt(pF.inicio)} a ${fmt(pF.fim)}`] = pF.totalPagar;
+      } catch(e) { console.warn('[GASMIG]', f.name, e.message); }
+    }
 
     const buf = await downloadFile(arquivo.id);
     const parsedPdf = await pdfParse(buf);
@@ -1076,12 +1098,14 @@ app.get('/api/concessionarias', async (req, res) => {
 
     const periodos = periodosBrutos.map(p => {
       const ocupacao = somaOcupacaoPeriodo(store, p.inicio, p.fim);
-      const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      const periodoLabel = `${fmt(p.inicio)} a ${fmt(p.fim)}`;
+      const totalPagar = valoresPorPeriodo[periodoLabel] ?? null;
       return {
-        periodo: `${fmt(p.inicio)} a ${fmt(p.fim)}`,
+        periodo: periodoLabel,
         consumo: +p.consumo.toFixed(3),
         ocupacao,
-        consumoPerCapita: ocupacao > 0 ? +(p.consumo / ocupacao).toFixed(3) : null
+        consumoPerCapita: ocupacao > 0 ? +(p.consumo / ocupacao).toFixed(3) : null,
+        valorPerCapita: (ocupacao > 0 && totalPagar !== null) ? +(totalPagar / ocupacao).toFixed(2) : null
       };
     });
 

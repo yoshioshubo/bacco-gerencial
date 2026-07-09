@@ -94,6 +94,7 @@
           <th class="num" id="hConsumo">Consumo (m³)</th>
           <th class="num">Ocupação</th>
           <th class="num">Consumo per cápita</th>
+          <th class="num">Valor per cápita</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -106,6 +107,7 @@ document.getElementById('logoBox').innerHTML = `<img src="data:image/png;base64,
 
 const NUM3 = v => v.toLocaleString('pt-BR', {minimumFractionDigits:3, maximumFractionDigits:3});
 const R = v => Math.round(v).toLocaleString('pt-BR');
+const BRL = v => v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
 
 let chart = null;
 let tipoAtual = 'gasmig';
@@ -119,7 +121,7 @@ async function carregar(tipo) {
   const periodos = d.periodos || [];
 
   if (!periodos.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty">${d.aviso || 'Nenhum dado encontrado.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">${d.aviso || 'Nenhum dado encontrado.'}</td></tr>`;
     if (chart) { chart.destroy(); chart = null; }
     return;
   }
@@ -130,6 +132,7 @@ async function carregar(tipo) {
       <td class="num">${NUM3(p.consumo)}</td>
       <td class="num">${p.ocupacao !== null ? R(p.ocupacao) : '—'}</td>
       <td class="num"><strong>${p.consumoPerCapita !== null ? NUM3(p.consumoPerCapita) + ' m³' : '—'}</strong></td>
+      <td class="num">${p.valorPerCapita !== null ? BRL(p.valorPerCapita) : '—'}</td>
     </tr>`).join('');
 
   // Gráfico: mais antigo → mais recente da esquerda para direita
