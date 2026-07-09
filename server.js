@@ -991,6 +991,104 @@ function parseConsumoFilename(name) {
   return `${yyyy}-${String(mm).padStart(2,'0')}`;
 }
 
+async function findArquivoConsumoMaisRecente(prefixo) {
+  const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false and mimeType='application/pdf'`);
+  const d = await driveGet(`files?q=${q}&fields=files(id,name,modifiedTime)&corpora=allDrives`);
+  const arquivos = (d.files || [])
+    .filter(f => normalizaTexto(f.name).startsWith(prefixo))
+    .map(f => ({ ...f, mesKey: parseConsumoFilename(f.name) }))
+    .filter(f => f.mesKey);
+  if (!arquivos.length) return null;
+  arquivos.sort((a, b) => b.mesKey.localeCompare(a.mesKey));
+  return arquivos[0];
+}
+
+// ── Parser GASMIG (consumo de gás por período de leitura) ────────────────────
+function parseGasmigTexto(texto) {
+  const numRe = /\d{1,3}(?:\.\d{3})*,\d{2,3}/g;
+
+  // Período de faturamento atual (a linha "Período" seguida de "dd/mm/aa a dd/mm/aa")
+  const atualMatch = texto.match(/Per[ií]odo\s*\n(\d{2})\/(\d{2})\/(\d{2})\s*a\s*(\d{2})\/(\d{2})\/(\d{2})/);
+  let periodoAtual = null;
+  if (atualMatch) {
+    const inicio = new Date(2000 + (+atualMatch[3]), +atualMatch[2] - 1, +atualMatch[1]);
+    const fim    = new Date(2000 + (+atualMatch[6]), +atualMatch[5] - 1, +atualMatch[4]);
+    const medIdx = texto.indexOf('DADOS DE MEDIÇÃO');
+    const fatIdx = texto.indexOf('DADOS DE FATURAMENTO');
+    let consumo = null;
+    if (medIdx >= 0 && fatIdx > medIdx) {
+      const trecho = texto.substring(medIdx, fatIdx);
+      const nums = [...trecho.matchAll(numRe)].map(m => parseFloat(m[0].replace(/\./g,'').replace(',','.')));
+      if (nums.length) consumo = nums[nums.length - 1];
+    }
+    if (consumo !== null) periodoAtual = { inicio, fim, consumo };
+  }
+
+  // Tabela HISTÓRICO (períodos anteriores)
+  const historico = [];
+  const histIdx = texto.indexOf('HISTÓRICO');
+  if (histIdx >= 0) {
+    const trecho = texto.substring(histIdx);
+    const re = /(\d{2})\/(\d{2})\/(\d{4})\s*a\s*(\d{2})\/(\d{2})\/(\d{4})\s+([\d.,]+)/g;
+    let m;
+    while ((m = re.exec(trecho))) {
+      historico.push({
+        inicio: new Date(+m[3], +m[2] - 1, +m[1]),
+        fim:    new Date(+m[6], +m[5] - 1, +m[4]),
+        consumo: parseFloat(m[7].replace(/\./g,'').replace(',','.'))
+      });
+    }
+  }
+
+  const periodos = [];
+  if (periodoAtual) periodos.push(periodoAtual);
+  periodos.push(...historico);
+  return periodos;
+}
+
+// Soma hóspedes (ocupação) de todos os meses já sincronizados dentro de um intervalo de datas
+function somaOcupacaoPeriodo(store, inicio, fim) {
+  let total = 0, temDados = false;
+  for (const mesKeyStr of Object.keys(store.dados || {})) {
+    const serie = store.dados[mesKeyStr].serie || [];
+    for (const s of serie) {
+      const [dd, mm, yyyy] = s.data.split('/');
+      const dt = new Date(+yyyy, +mm - 1, +dd);
+      if (dt >= inicio && dt <= fim) { total += (s.hospedes || 0); temDados = true; }
+    }
+  }
+  return temDados ? total : null;
+}
+
+app.get('/api/concessionarias', async (req, res) => {
+  const tipo = (req.query.tipo || 'gasmig').toLowerCase();
+  try {
+    if (tipo !== 'gasmig') return res.json({ tipo, periodos: [], aviso: 'Ainda não configurado.' });
+
+    const arquivo = await findArquivoConsumoMaisRecente('GASMIG');
+    if (!arquivo) return res.json({ tipo, periodos: [], aviso: 'Nenhum PDF da GASMIG encontrado na pasta.' });
+
+    const buf = await downloadFile(arquivo.id);
+    const parsedPdf = await pdfParse(buf);
+    const periodosBrutos = parseGasmigTexto(parsedPdf.text);
+
+    const store = fs.existsSync(RESULT_FILE) ? JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8')) : { dados: {} };
+
+    const periodos = periodosBrutos.map(p => {
+      const ocupacao = somaOcupacaoPeriodo(store, p.inicio, p.fim);
+      const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      return {
+        periodo: `${fmt(p.inicio)} a ${fmt(p.fim)}`,
+        consumo: +p.consumo.toFixed(3),
+        ocupacao,
+        consumoPerCapita: ocupacao > 0 ? +(p.consumo / ocupacao).toFixed(3) : null
+      };
+    });
+
+    res.json({ tipo, arquivo: arquivo.name, periodos });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-consumo', async (req, res) => {
   try {
     const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false and mimeType='application/pdf'`);
@@ -1098,6 +1196,7 @@ app.get('/api/dados', (req, res) => {
 app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
 app.get('/inventario', (req, res) => res.sendFile(path.join(__dirname, 'public', 'inventario.html')));
 app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
+app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
 
 app.get('/api/inventario', async (req, res) => {
   try {
