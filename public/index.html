@@ -354,7 +354,7 @@ function render(d){
           <tr><td class="lbl">Sala</td><td>${BRL(d.eventosSala)}</td></tr>
           <tr><td class="lbl">Equipamentos</td><td>${BRL(d.eventosEquip)}</td></tr>
           <tr><td class="lbl">Banquete</td><td>${BRL(d.eventosBanq)}</td></tr>
-          <tr><td>Total</td><td class="big">${BRL(d.receitaEventos)}</td></tr>
+          <tr><td>Total</td><td class="big">${BRL(+(d.eventosSala+d.eventosEquip+d.eventosBanq).toFixed(2))}</td></tr>
         </table>
       </div>
     </div>`;
