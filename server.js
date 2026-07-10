@@ -547,9 +547,7 @@ function extractXlsxImages(buffer) {
 
 // ── Parser CAEd (check-in/check-out → diárias dia a dia) ─────────────────────
 const CAED_ANO_PADRAO = 2026;
-const CAED_RATE = {
-  'SEM PENSAO': 0, 'MEIA PENSAO': 55, 'PENSAO COMPLETA': 110
-};
+const CAED_RATE_MEDIA = 46; // taxa única por diária (R$), independente do tipo de pensão
 
 function normalizaTexto(s) {
   return String(s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -620,7 +618,7 @@ function parseCaed(buffer) {
       if (!checkin || !checkout || checkout <= checkin) continue;
 
       const tipoPensao = normalizaTexto(row[5]);
-      const rate = CAED_RATE[tipoPensao] ?? 0;
+      const rate = CAED_RATE_MEDIA;
       const status = String(row[6] || '').trim();
       const nomes = nomeCel.split('\n').map(n => n.trim()).filter(Boolean);
       // Diária é contada por RESERVA (quarto), não por hóspede — reservas com 2+ nomes
