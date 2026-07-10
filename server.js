@@ -720,22 +720,21 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes, c
 
   const allDates = [...new Set([...Object.keys(vendas.daily), ...Object.keys(ocupacao.daily)])].sort();
 
-  // Calcula receitaEventos antes de usar no fallback
+  // Faturamento de Eventos considera apenas Banquete (não soma Sala/Equipamentos)
   const eventosBanqPre   = eventosmes?.banq  || 0;
-  const receitaEventosPre = eventosmes?.total || eventosBanqPre;
 
   // Usa breakdown diário de eventos se disponível; caso contrário distribui igualmente
   const eventosDailyMap = eventosmes?.daily || {};
   const temDailyEventos = Object.keys(eventosDailyMap).length > 0;
   const eventosDiarioFallback = (!temDailyEventos && allDates.length > 0)
-    ? +(receitaEventosPre / allDates.length).toFixed(2) : 0;
+    ? +(eventosBanqPre / allDates.length).toFixed(2) : 0;
 
   const serie = allDates.map(d => ({
     data:        d,
     restaurante: vendas.daily[d]?.RESTAURANTE || 0,
     roomService: vendas.daily[d]?.['Room Service'] || 0,
     cafe:        ocupacao.daily[d]?.receita  || 0,
-    eventos:     temDailyEventos ? (eventosDailyMap[d]?.total || 0) : eventosDiarioFallback,
+    eventos:     temDailyEventos ? (eventosDailyMap[d]?.banq || 0) : eventosDiarioFallback,
     totalDia:   (vendas.daily[d]?.RESTAURANTE || 0) + (vendas.daily[d]?.['Room Service'] || 0),
     hospedes:    ocupacao.daily[d]?.hospedes || 0,
     receitaCafe: ocupacao.daily[d]?.receita  || 0
@@ -747,7 +746,7 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes, c
   const eventosSala     = eventosmes?.sala  || 0;
   const eventosEquip    = eventosmes?.equip || 0;
   const eventosBanq     = eventosmes?.banq  || 0;
-  const receitaEventos  = eventosmes?.total || eventosBanq;
+  const receitaEventos  = eventosBanq;
 
   // CAEd no Dashboard conta apenas do dia 1 até a última data do período do relatório
   // (mesma data-corte exibida no cabeçalho, ex: "01/07/2026 a 07/07/2026 · 7 dias")
