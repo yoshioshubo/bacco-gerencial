@@ -64,6 +64,7 @@ app.use(express.urlencoded({ extended: false }));
 
 const PUBLIC_PATHS = ['/login', '/login.html', '/trocar-senha', '/trocar-senha.html'];
 app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   const isPublic = PUBLIC_PATHS.some(p => req.path.startsWith(p)) || req.path.startsWith('/auth/');
   if (!req.session?.user && !isPublic) return res.redirect('/login');
   next();
