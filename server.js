@@ -1239,13 +1239,17 @@ function extrairItensVinho(texto) {
       let nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
       // Corrige truncamento de origem: a impressão do PDV corta "VINHO BRANCO" em "VINHO BRANC"
       nome = nome.replace(/VINHO BRANC$/, 'VINHO BRANCO');
-      if (nome) {
+      // Descarta nomes sem nenhuma letra (fragmento numérico/monetário capturado por engano,
+      // geralmente por quebra de página que atropela a estrutura normal da linha)
+      const temLetra = /[A-ZÀ-Ú]/.test(nome);
+      if (nome && temLetra) {
         // Preço e QTD vêm concatenados sem separador (ex: "R$ 29,001,00"); QTD é sempre o último
         // número válido "d{2}" nesse trecho — o preço nunca ancora corretamente por causa da ambiguidade
         const primeiroSeg = line.split('R$')[1] || '';
         const matches = [...primeiroSeg.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g)];
         const qtd = matches.length ? parseFloat(matches[matches.length - 1][0].replace(/\./g,'').replace(',','.')) : null;
-        if (qtd !== null && lastDate) {
+        // Sanity check: nenhuma venda unitária de vinho passa de algumas dezenas de unidades
+        if (qtd !== null && qtd > 0 && qtd <= 50 && lastDate) {
           // Tudo em GRUPO:VINHOS que não é vendido em taça é garrafa (vendida pelo nome/marca do vinho)
           const tipo = /TA[ÇC]A/.test(nome) ? 'Taça' : 'Garrafa';
           itens.push({ data: lastDate, nome, tipo, qtd });
