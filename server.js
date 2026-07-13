@@ -1256,6 +1256,35 @@ app.get('/api/debug-vinhos', async (req, res) => {
     const buf = await downloadFile(pdf.id);
     const texto = await pdfParse(buf).then(r => r.text);
     const linhas = texto.split('\n');
+
+    if (req.query.anomalias) {
+      const esperado = /^(AL )?TA[ÇC]A DE VINHO (TINTO|BRANCO)$/;
+      const anomalias = [];
+      for (let i = 0; i < linhas.length; i++) {
+        const line = linhas[i].trim();
+        const qtdR = (line.match(/R\$/g) || []).length;
+        if (line.startsWith('R$') && qtdR >= 4) {
+          let nomeParts = [];
+          let j = i - 1;
+          while (j >= 0 && nomeParts.length < 3) {
+            const prev = linhas[j].trim();
+            if (!prev) { j--; continue; }
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(prev)) break;
+            if (/^\d{2}:\d{2}$/.test(prev)) break;
+            if (/Mesa|Posi[çc][ãa]o/i.test(prev)) break;
+            if (prev.startsWith('R$')) break;
+            nomeParts.unshift(prev);
+            j--;
+          }
+          const nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+          if (/VINHO/.test(nome) && !esperado.test(nome)) {
+            anomalias.push({ idx: i, nome, contexto: linhas.slice(Math.max(0,i-8), i+3).map((l,k)=>`${Math.max(0,i-8)+k}: ${l}`) });
+          }
+        }
+      }
+      return res.json({ arquivo: pdf.name, totalAnomalias: anomalias.length, anomalias });
+    }
+
     const ocorrencias = [];
     for (let i = 0; i < linhas.length; i++) {
       if (/VINHO/i.test(linhas[i])) {
