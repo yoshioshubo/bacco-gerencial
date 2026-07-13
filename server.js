@@ -1246,6 +1246,26 @@ function extrairItensVinho(texto) {
   return itens;
 }
 
+app.get('/api/debug-vinhos', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    const arquivoNome = req.query.arquivo;
+    const pdfs = await allPdfs(vendaDir.id);
+    const pdf = arquivoNome ? pdfs.find(f => f.name === arquivoNome) : pdfs.find(f => mesKey(f.name) === '2026-07');
+    if (!pdf) return res.status(404).json({ error: 'Arquivo não encontrado.', disponiveis: pdfs.map(f=>f.name) });
+    const buf = await downloadFile(pdf.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+    const linhas = texto.split('\n');
+    const ocorrencias = [];
+    for (let i = 0; i < linhas.length; i++) {
+      if (/VINHO/i.test(linhas[i])) {
+        ocorrencias.push({ idx: i, contexto: linhas.slice(Math.max(0,i-6), i+6).map((l,k)=>`${Math.max(0,i-6)+k}: ${l}`) });
+      }
+    }
+    res.json({ arquivo: pdf.name, totalOcorrencias: ocorrencias.length, ocorrencias: ocorrencias.slice(0, 15) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/relatorio-vinhos', async (req, res) => {
   try {
     const desde = req.query.desde ? new Date(req.query.desde) : new Date(2026, 3, 1); // 1º de abril de 2026 por padrão
