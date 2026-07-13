@@ -1311,13 +1311,17 @@ app.get('/api/debug-vinhos', async (req, res) => {
 
 app.get('/api/relatorio-vinhos', async (req, res) => {
   try {
+    const mesesFiltro = req.query.meses ? req.query.meses.split(',').map(s => s.trim()) : null;
     const desde = req.query.desde ? new Date(req.query.desde) : new Date(2026, 3, 1); // 1º de abril de 2026 por padrão
+
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
     if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
     const pdfs = await allPdfs(vendaDir.id);
     const pdfsRelevantes = pdfs.filter(f => {
       const k = mesKey(f.name);
-      return k && k >= `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}`;
+      if (!k) return false;
+      if (mesesFiltro) return mesesFiltro.includes(k);
+      return k >= `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}`;
     });
 
     const todosItens = [];
@@ -1325,7 +1329,7 @@ app.get('/api/relatorio-vinhos', async (req, res) => {
     for (const f of pdfsRelevantes) {
       const buf = await downloadFile(f.id);
       const texto = await pdfParse(buf).then(r => r.text);
-      const itens = extrairItensVinho(texto).filter(it => it.data >= desde);
+      const itens = extrairItensVinho(texto).filter(it => mesesFiltro ? true : it.data >= desde);
       todosItens.push(...itens);
       arquivosProcessados.push({ arquivo: f.name, itensEncontrados: itens.length });
     }
