@@ -1203,6 +1203,92 @@ app.get('/api/debug-produtos', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Relatório de vinhos (garrafas e taças) desde uma data ────────────────────
+function extrairItensVinho(texto) {
+  const linhas = texto.split('\n');
+  const itens = [];
+  let lastDate = null;
+
+  for (let i = 0; i < linhas.length; i++) {
+    const line = linhas[i].trim();
+    const dm = line.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (dm) { lastDate = new Date(+dm[3], +dm[2] - 1, +dm[1]); continue; }
+
+    const qtdR = (line.match(/R\$/g) || []).length;
+    if (line.startsWith('R$') && qtdR >= 4) {
+      // Junta as linhas anteriores (até 3) para formar o nome do item, parando em limites conhecidos
+      let nomeParts = [];
+      let j = i - 1;
+      while (j >= 0 && nomeParts.length < 3) {
+        const prev = linhas[j].trim();
+        if (!prev) { j--; continue; }
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(prev)) break;
+        if (/^\d{2}:\d{2}$/.test(prev)) break;
+        if (/Mesa|Posi[çc][ãa]o/i.test(prev)) break;
+        if (prev.startsWith('R$')) break;
+        nomeParts.unshift(prev);
+        j--;
+      }
+      const nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+      if (/VINHO/.test(nome)) {
+        // Preço e QTD vêm concatenados sem separador (ex: "R$ 29,001,00"); QTD é sempre o último
+        // número válido "d{2}" nesse trecho — o preço nunca ancora corretamente por causa da ambiguidade
+        const primeiroSeg = line.split('R$')[1] || '';
+        const matches = [...primeiroSeg.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g)];
+        const qtd = matches.length ? parseFloat(matches[matches.length - 1][0].replace(/\./g,'').replace(',','.')) : null;
+        if (qtd !== null && lastDate) {
+          const tipo = /TA[ÇC]A/.test(nome) ? 'Taça' : (/GARRAFA/.test(nome) ? 'Garrafa' : 'Outro');
+          itens.push({ data: lastDate, nome, tipo, qtd });
+        }
+      }
+    }
+  }
+  return itens;
+}
+
+app.get('/api/relatorio-vinhos', async (req, res) => {
+  try {
+    const desde = req.query.desde ? new Date(req.query.desde) : new Date(2026, 3, 1); // 1º de abril de 2026 por padrão
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const pdfsRelevantes = pdfs.filter(f => {
+      const k = mesKey(f.name);
+      return k && k >= `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}`;
+    });
+
+    const todosItens = [];
+    const arquivosProcessados = [];
+    for (const f of pdfsRelevantes) {
+      const buf = await downloadFile(f.id);
+      const texto = await pdfParse(buf).then(r => r.text);
+      const itens = extrairItensVinho(texto).filter(it => it.data >= desde);
+      todosItens.push(...itens);
+      arquivosProcessados.push({ arquivo: f.name, itensEncontrados: itens.length });
+    }
+
+    // Agrega por item + mês
+    const porItem = {};
+    const porMes = {};
+    for (const it of todosItens) {
+      if (!porItem[it.nome]) porItem[it.nome] = { nome: it.nome, tipo: it.tipo, qtdTotal: 0, porMes: {} };
+      porItem[it.nome].qtdTotal += it.qtd;
+      const mesKeyStr = `${it.data.getFullYear()}-${String(it.data.getMonth()+1).padStart(2,'0')}`;
+      porItem[it.nome].porMes[mesKeyStr] = (porItem[it.nome].porMes[mesKeyStr] || 0) + it.qtd;
+      if (!porMes[mesKeyStr]) porMes[mesKeyStr] = { garrafas: 0, tacas: 0 };
+      if (it.tipo === 'Garrafa') porMes[mesKeyStr].garrafas += it.qtd;
+      else if (it.tipo === 'Taça') porMes[mesKeyStr].tacas += it.qtd;
+    }
+
+    res.json({
+      desde: desde.toISOString().slice(0,10),
+      arquivosProcessados,
+      itens: Object.values(porItem).sort((a,b) => b.qtdTotal - a.qtdTotal),
+      resumoMensal: porMes
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Rotas ─────────────────────────────────────────────────────────────────────
 app.get('/api/dados', (req, res) => {
   if (!fs.existsSync(RESULT_FILE)) return res.status(404).json({ error: 'Sem dados. Clique em Sincronizar.' });
