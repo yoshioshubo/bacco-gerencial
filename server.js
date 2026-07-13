@@ -1258,7 +1258,7 @@ app.get('/api/debug-vinhos', async (req, res) => {
     const linhas = texto.split('\n');
 
     if (req.query.anomalias) {
-      const esperado = /^(AL )?TA[ÇC]A DE VINHO (TINTO|BRANCO)$/;
+      const esperado = /^TA[ÇC]A DE VINHO (TINTO|BRANCO)$/;
       const anomalias = [];
       for (let i = 0; i < linhas.length; i++) {
         const line = linhas[i].trim();
