@@ -1208,14 +1208,19 @@ function extrairItensVinho(texto) {
   const linhas = texto.split('\n');
   const itens = [];
   let lastDate = null;
+  let grupoAtual = null;
 
   for (let i = 0; i < linhas.length; i++) {
     const line = linhas[i].trim();
+
+    const gm = line.match(/^GRUPO:\s*(.+)$/i);
+    if (gm) { grupoAtual = gm[1].trim().toUpperCase(); continue; }
+
     const dm = line.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (dm) { lastDate = new Date(+dm[3], +dm[2] - 1, +dm[1]); continue; }
 
     const qtdR = (line.match(/R\$/g) || []).length;
-    if (line.startsWith('R$') && qtdR >= 4) {
+    if (grupoAtual === 'VINHOS' && line.startsWith('R$') && qtdR >= 4) {
       // Junta as linhas anteriores (até 3) para formar o nome do item, parando em limites conhecidos
       let nomeParts = [];
       let j = i - 1;
@@ -1234,14 +1239,15 @@ function extrairItensVinho(texto) {
       let nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
       // Corrige truncamento de origem: a impressão do PDV corta "VINHO BRANCO" em "VINHO BRANC"
       nome = nome.replace(/VINHO BRANC$/, 'VINHO BRANCO');
-      if (/VINHO/.test(nome)) {
+      if (nome) {
         // Preço e QTD vêm concatenados sem separador (ex: "R$ 29,001,00"); QTD é sempre o último
         // número válido "d{2}" nesse trecho — o preço nunca ancora corretamente por causa da ambiguidade
         const primeiroSeg = line.split('R$')[1] || '';
         const matches = [...primeiroSeg.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g)];
         const qtd = matches.length ? parseFloat(matches[matches.length - 1][0].replace(/\./g,'').replace(',','.')) : null;
         if (qtd !== null && lastDate) {
-          const tipo = /TA[ÇC]A/.test(nome) ? 'Taça' : (/GARRAFA/.test(nome) ? 'Garrafa' : 'Outro');
+          // Tudo em GRUPO:VINHOS que não é vendido em taça é garrafa (vendida pelo nome/marca do vinho)
+          const tipo = /TA[ÇC]A/.test(nome) ? 'Taça' : 'Garrafa';
           itens.push({ data: lastDate, nome, tipo, qtd });
         }
       }
