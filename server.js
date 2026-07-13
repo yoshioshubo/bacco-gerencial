@@ -1226,10 +1226,14 @@ function extrairItensVinho(texto) {
         if (/^\d{2}:\d{2}$/.test(prev)) break;
         if (/Mesa|Posi[çc][ãa]o/i.test(prev)) break;
         if (prev.startsWith('R$')) break;
+        // Fragmento curto isolado (ex: "AL") — continuação de "Posição N -" quebrada em linha própria, não é nome
+        if (/^[A-ZÀ-Ú]{1,3}$/i.test(prev)) { j--; continue; }
         nomeParts.unshift(prev);
         j--;
       }
-      const nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+      let nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+      // Corrige truncamento de origem: a impressão do PDV corta "VINHO BRANCO" em "VINHO BRANC"
+      nome = nome.replace(/VINHO BRANC$/, 'VINHO BRANCO');
       if (/VINHO/.test(nome)) {
         // Preço e QTD vêm concatenados sem separador (ex: "R$ 29,001,00"); QTD é sempre o último
         // número válido "d{2}" nesse trecho — o preço nunca ancora corretamente por causa da ambiguidade
