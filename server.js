@@ -19,6 +19,7 @@ const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
+const CUSTOS_FILE_ID = process.env.CUSTOS_FILE_ID || '1DrhrWAqb3eIButKhj4J9HPydAadw7khG';
 const CONSUMO_FOLDER_ID = process.env.CONSUMO_FOLDER_ID || '1gsvjga8clKukuN-S5AEWZHY6pHHT0RUn';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
@@ -1108,6 +1109,21 @@ app.get('/api/concessionarias', async (req, res) => {
     });
 
     res.json({ tipo, arquivo: arquivo.name, periodos });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/debug-custos', async (req, res) => {
+  try {
+    const buf = await downloadFile(CUSTOS_FILE_ID);
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const sheetName = wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+    res.json({
+      aba: sheetName,
+      totalLinhas: rows.length,
+      colunas: rows.length ? Object.keys(rows[0]) : [],
+      primeirasLinhas: rows.slice(0, 5)
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
