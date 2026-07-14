@@ -1219,6 +1219,17 @@ app.post('/api/custos/corrigir', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-custos-buscar', async (req, res) => {
+  try {
+    const termo = normalizaTexto(req.query.q || 'file');
+    const buf = await downloadFile(CUSTOS_FILE_ID);
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    const encontrados = rows.filter(r => normalizaTexto(r['Produto']).includes(termo));
+    res.json({ termo, totalEncontrado: encontrados.length, linhas: encontrados.slice(0, 30) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-custos', async (req, res) => {
   try {
     const buf = await downloadFile(CUSTOS_FILE_ID);
