@@ -1111,6 +1111,15 @@ app.get('/api/concessionarias', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-buscar-arquivo', async (req, res) => {
+  try {
+    const nome = req.query.nome || 'INSUMOS_organizado';
+    const q = encodeURIComponent(`name contains '${nome}' and trashed=false`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType,modifiedTime,parents)&corpora=allDrives`);
+    res.json({ encontrados: d.files || [] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-consumo', async (req, res) => {
   try {
     const q = encodeURIComponent(`'${CONSUMO_FOLDER_ID}' in parents and trashed=false and mimeType='application/pdf'`);
