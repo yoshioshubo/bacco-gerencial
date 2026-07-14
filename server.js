@@ -15,6 +15,7 @@ const DATA_DIR     = path.join(__dirname, 'data');
 const TOKENS_FILE  = path.join(DATA_DIR, 'tokens.json');
 const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
+const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
@@ -56,6 +57,13 @@ function loadUsers() {
 }
 
 function saveUsers(users) { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
+
+// ── Correções de Centro de Custo (aba Custos / Auditoria) ────────────────────
+function loadCorrecoes() {
+  try { return JSON.parse(fs.readFileSync(CUSTOS_CORRECOES_FILE, 'utf8')); }
+  catch { return { auditoria: {}, reatribuidos: {} }; }
+}
+function saveCorrecoes(c) { fs.writeFileSync(CUSTOS_CORRECOES_FILE, JSON.stringify(c, null, 2)); }
 
 // ── Sessão e middleware ───────────────────────────────────────────────────────
 app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false,
@@ -1112,6 +1120,105 @@ app.get('/api/concessionarias', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Converte serial Excel (número) em dd/mm/yyyy; se já vier como texto, devolve como está
+function formataDataExcel(v) {
+  if (typeof v === 'number') {
+    const dt = new Date((v - 25569) * 86400 * 1000);
+    return `${String(dt.getUTCDate()).padStart(2,'0')}/${String(dt.getUTCMonth()+1).padStart(2,'0')}/${dt.getUTCFullYear()}`;
+  }
+  return String(v || '');
+}
+
+// Carrega o arquivo INSUMOS_organizado.xlsx e devolve só as linhas de Saída (únicas que têm
+// Centro de Custo real — nas linhas de Recebimento essa coluna traz o nome do fornecedor)
+async function carregarItensCustos() {
+  const buf = await downloadFile(CUSTOS_FILE_ID);
+  const wb = XLSX.read(buf, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+  const itens = [];
+  let idx = 0;
+  for (const r of rows) {
+    if (String(r['E/S/H']).trim() !== 'Saída') continue;
+    itens.push({
+      id: `s${idx}`,
+      dataMovimento: formataDataExcel(r['Data Movimento']),
+      artigo: String(r['Artigo'] || ''),
+      produto: String(r['Produto'] || ''),
+      documento: String(r['Documento'] || ''),
+      saidaQtd: Number(r['Saída (Qtd)']) || 0,
+      saidaValor: +(Number(r['Saída (Valor)']) || 0).toFixed(2),
+      valorMedio: +(Number(r['Valor (Preço Médio)']) || 0).toFixed(2),
+      centroCustoOriginal: String(r['Centro de Custo'] || '').trim(),
+      dataLanc: formataDataExcel(r['Data Lanc.'])
+    });
+    idx++;
+  }
+  return itens;
+}
+
+function aplicarCorrecoes(itens, correcoes) {
+  return itens
+    .filter(it => !correcoes.auditoria[it.id]) // remove os que estão em auditoria
+    .map(it => ({
+      ...it,
+      centroCusto: correcoes.reatribuidos[it.id] || it.centroCustoOriginal
+    }));
+}
+
+app.get('/api/custos/centros', async (req, res) => {
+  try {
+    const itens = aplicarCorrecoes(await carregarItensCustos(), loadCorrecoes());
+    const porCentro = {};
+    for (const it of itens) porCentro[it.centroCusto] = (porCentro[it.centroCusto] || 0) + 1;
+    const centros = Object.entries(porCentro).map(([nome, qtd]) => ({ nome, qtd })).sort((a,b) => b.qtd - a.qtd);
+    res.json({ centros });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/custos/itens', async (req, res) => {
+  try {
+    const centro = req.query.centro;
+    if (!centro) return res.status(400).json({ error: 'Parâmetro centro é obrigatório.' });
+    const itens = aplicarCorrecoes(await carregarItensCustos(), loadCorrecoes());
+    res.json({ itens: itens.filter(it => it.centroCusto === centro) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/custos/auditoria', async (req, res) => {
+  try {
+    const correcoes = loadCorrecoes();
+    const todos = await carregarItensCustos();
+    const emAuditoria = todos
+      .filter(it => correcoes.auditoria[it.id])
+      .map(it => ({ ...it, centroCustoOriginal: correcoes.auditoria[it.id].centroOriginal || it.centroCustoOriginal }));
+    res.json({ itens: emAuditoria });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/custos/mover-auditoria', async (req, res) => {
+  try {
+    const { id, centroAtual } = req.body;
+    if (!id) return res.status(400).json({ error: 'id é obrigatório.' });
+    const correcoes = loadCorrecoes();
+    correcoes.auditoria[id] = { centroOriginal: centroAtual || '', movidoEm: new Date().toISOString() };
+    delete correcoes.reatribuidos[id];
+    saveCorrecoes(correcoes);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/custos/corrigir', async (req, res) => {
+  try {
+    const { id, novoCentro } = req.body;
+    if (!id || !novoCentro) return res.status(400).json({ error: 'id e novoCentro são obrigatórios.' });
+    const correcoes = loadCorrecoes();
+    delete correcoes.auditoria[id];
+    correcoes.reatribuidos[id] = novoCentro;
+    saveCorrecoes(correcoes);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-custos', async (req, res) => {
   try {
     const buf = await downloadFile(CUSTOS_FILE_ID);
@@ -1397,6 +1504,7 @@ app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'e
 app.get('/inventario', (req, res) => res.sendFile(path.join(__dirname, 'public', 'inventario.html')));
 app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
 app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
+app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
 
 app.get('/api/inventario', async (req, res) => {
   try {
