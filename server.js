@@ -1126,6 +1126,38 @@ app.post('/api/custos/corrigir', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+const MES_ABREV_NUM = { jan:1, fev:2, mar:3, abr:4, mai:5, jun:6, jul:7, ago:8, set:9, out:10, nov:11, dez:12 };
+const MES_NOMES = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function parseTripadvisorTexto(texto, ano) {
+  const linhas = texto.split('\n');
+  const dados = [];
+  for (const linha of linhas) {
+    const m = linha.trim().match(/^([a-zà-ú]{3})\s*-\s*(\d+)\s*-\s*([\d,]+)$/i);
+    if (!m) continue;
+    const abrev = m[1].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const mesNum = MES_ABREV_NUM[abrev];
+    if (!mesNum) continue;
+    dados.push({
+      mes: `${ano}-${String(mesNum).padStart(2,'0')}`,
+      mesLabel: MES_NOMES[mesNum],
+      avaliacoes: parseInt(m[2], 10),
+      nota: parseFloat(m[3].replace(',', '.'))
+    });
+  }
+  dados.sort((a, b) => a.mes.localeCompare(b.mes));
+  return dados;
+}
+
+app.get('/api/tripadvisor', async (req, res) => {
+  try {
+    const ano = req.query.ano || new Date().getFullYear();
+    const texto = await downloadGoogleDocText(TRIPADVISOR_DOC_ID);
+    const dados = parseTripadvisorTexto(texto, ano);
+    res.json({ ano, dados });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-tripadvisor', async (req, res) => {
   try {
     const texto = await downloadGoogleDocText(TRIPADVISOR_DOC_ID);
@@ -1429,6 +1461,7 @@ app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'e
 app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
 app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
 app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
+app.get('/tripadvisor', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tripadvisor.html')));
 
 function mesAtualKey() {
   const d = new Date();
