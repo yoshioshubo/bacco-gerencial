@@ -8,7 +8,6 @@ const crypto   = require('crypto');
 const session  = require('express-session');
 const pdfParse = require('pdf-parse');
 const XLSX     = require('xlsx');
-const AdmZip   = require('adm-zip');
 
 const app          = express();
 const DATA_DIR     = path.join(__dirname, 'data');
@@ -18,9 +17,9 @@ const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
-const INVENTARIO_FILE_ID = process.env.INVENTARIO_FILE_ID || '1xVwMNzk5-TSIVOv1f8QlH4DId9pS6kl7';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
 const CUSTOS_FILE_ID = process.env.CUSTOS_FILE_ID || '1DrhrWAqb3eIButKhj4J9HPydAadw7khG';
+const TRIPADVISOR_DOC_ID = process.env.TRIPADVISOR_DOC_ID || '1yMNqdsXmD50fdLWVhSj4VII5vAFxqgFUHvoPfh5RVgg';
 const CONSUMO_FOLDER_ID = process.env.CONSUMO_FOLDER_ID || '1gsvjga8clKukuN-S5AEWZHY6pHHT0RUn';
 const CLIENT_ID    = process.env.GOOGLE_CLIENT_ID    || '';
 const CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET|| '';
@@ -259,6 +258,16 @@ async function downloadFile(fileId) {
   return body;
 }
 
+async function downloadGoogleDocText(fileId) {
+  const token = await getToken();
+  const { status, body } = await req(
+    `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (status !== 200) throw new Error(`Export do Google Doc falhou HTTP ${status}`);
+  return body.toString('utf8');
+}
+
 // ── Parsers ───────────────────────────────────────────────────────────────────
 function parseVendas(text) {
   const lines = text.split('\n');
@@ -472,86 +481,6 @@ function parseEventos(buffer) {
     const total = +(totalSala + totalEquip + totalBanq).toFixed(2);
     result[mesKey] = { pax: totalPax, sala: +totalSala.toFixed(2), equip: +totalEquip.toFixed(2), banq: +totalBanq.toFixed(2), total, daily, linhas };
   }
-  return result;
-}
-
-// ── Extrai imagens embutidas de um .xlsx, mapeadas por aba + linha ────────────
-function extractXlsxImages(buffer) {
-  const result = {}; // { sheetName: { rowIndex(0-based): dataUrl } }
-  try {
-    const zip = new AdmZip(buffer);
-    const readText = p => { const e = zip.getEntry(p); return e ? zip.readAsText(e) : null; };
-    const readBin  = p => { const e = zip.getEntry(p); return e ? zip.readFile(e) : null; };
-
-    const resolveRelPath = (basePath, target) => {
-      // basePath ex: 'xl/worksheets/sheet1.xml', target ex: '../drawings/drawing1.xml'
-      const baseDir = basePath.split('/').slice(0, -1); // ['xl','worksheets']
-      const parts = target.split('/');
-      const stack = [...baseDir];
-      for (const part of parts) {
-        if (part === '..') stack.pop();
-        else if (part !== '.') stack.push(part);
-      }
-      return stack.join('/');
-    };
-
-    const parseRels = xml => {
-      const map = {};
-      if (!xml) return map;
-      const re = /<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*\/?>/g;
-      let m;
-      while ((m = re.exec(xml))) map[m[1]] = m[2];
-      return map;
-    };
-
-    // 1. Mapeia nome da aba -> r:id -> caminho do sheetN.xml
-    const workbookXml = readText('xl/workbook.xml');
-    const workbookRels = parseRels(readText('xl/_rels/workbook.xml.rels'));
-    const sheetEntries = [];
-    if (workbookXml) {
-      const re = /<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/?>/g;
-      let m;
-      while ((m = re.exec(workbookXml))) sheetEntries.push({ name: m[1], rId: m[2] });
-    }
-
-    for (const { name, rId } of sheetEntries) {
-      const target = workbookRels[rId];
-      if (!target) continue;
-      const sheetPath = resolveRelPath('xl/workbook.xml', target); // ex: xl/worksheets/sheet1.xml
-      const sheetFile = sheetPath.split('/').pop();
-      const sheetRelsPath = `xl/worksheets/_rels/${sheetFile}.rels`;
-      const sheetRels = parseRels(readText(sheetRelsPath));
-      const drawingRel = Object.values(sheetRels).find(t => t.includes('drawing'));
-      if (!drawingRel) continue;
-      const drawingPath = resolveRelPath(sheetPath, drawingRel); // xl/drawings/drawing1.xml
-      const drawingXml = readText(drawingPath);
-      if (!drawingXml) continue;
-      const drawingFile = drawingPath.split('/').pop();
-      const drawingRelsPath = `xl/drawings/_rels/${drawingFile}.rels`;
-      const drawingRels = parseRels(readText(drawingRelsPath));
-
-      // 2. Percorre âncoras (twoCellAnchor / oneCellAnchor), extrai linha inicial + rId da imagem
-      const anchorRe = /<xdr:(?:twoCellAnchor|oneCellAnchor)[\s\S]*?<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/g;
-      const rowMap = {};
-      let am;
-      while ((am = anchorRe.exec(drawingXml))) {
-        const block = am[0];
-        const rowM = block.match(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/);
-        const embedM = block.match(/r:embed="([^"]+)"/);
-        if (!rowM || !embedM) continue;
-        const row = parseInt(rowM[1]);
-        const mediaTarget = drawingRels[embedM[1]];
-        if (!mediaTarget) continue;
-        const mediaPath = resolveRelPath(drawingPath, mediaTarget); // xl/media/imageN.ext
-        const bin = readBin(mediaPath);
-        if (!bin) continue;
-        const ext = mediaPath.split('.').pop().toLowerCase();
-        const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
-        rowMap[row] = `data:${mime};base64,${bin.toString('base64')}`;
-      }
-      if (Object.keys(rowMap).length) result[name] = rowMap;
-    }
-  } catch(e) { console.warn('[Inventario] Falha ao extrair imagens:', e.message); }
   return result;
 }
 
@@ -901,28 +830,6 @@ app.get('/api/debug-caed', async (req, res) => {
   } catch(e) { res.status(500).json({ erro: e.message }); }
 });
 
-app.get('/api/debug-inventario', async (req, res) => {
-  try {
-    const buf = await downloadFile(INVENTARIO_FILE_ID);
-    const wb  = XLSX.read(buf, { type: 'buffer' });
-    const imagens = extractXlsxImages(buf);
-    const out = { abas: [] };
-    for (const sheetName of wb.SheetNames) {
-      const sheet = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      const linhasComFoto = Object.keys(imagens[sheetName] || {}).map(Number).sort((a,b)=>a-b);
-      out.abas.push({
-        nome: sheetName,
-        totalLinhas: rows.length,
-        merges: sheet['!merges'] || [],
-        linhasComFotoIdx: linhasComFoto,
-        todasLinhas: rows
-      });
-    }
-    res.json(out);
-  } catch(e) { res.status(500).json({ erro: e.message }); }
-});
-
 // ── Debug Eventos ─────────────────────────────────────────────────────────────
 app.get('/api/debug-eventos', async (req, res) => {
   try {
@@ -1219,6 +1126,13 @@ app.post('/api/custos/corrigir', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-tripadvisor', async (req, res) => {
+  try {
+    const texto = await downloadGoogleDocText(TRIPADVISOR_DOC_ID);
+    res.json({ tamanho: texto.length, texto });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/debug-custos-buscar', async (req, res) => {
   try {
     const termo = normalizaTexto(req.query.q || 'file');
@@ -1512,50 +1426,9 @@ app.get('/api/dados', (req, res) => {
 });
 
 app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
-app.get('/inventario', (req, res) => res.sendFile(path.join(__dirname, 'public', 'inventario.html')));
 app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
 app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
 app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
-
-app.get('/api/inventario', async (req, res) => {
-  try {
-    const buf = await downloadFile(INVENTARIO_FILE_ID);
-    const wb  = XLSX.read(buf, { type: 'buffer' });
-    const imagens = extractXlsxImages(buf);
-    const sheetName = wb.SheetNames[0];
-    const rows  = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
-    const fotos = imagens[sheetName] || {};
-    const subHeader = rows[1] || [];
-    const colunas = {
-      total: 'Total',
-      adega: String(subHeader[2] || '').trim() || '15 na Adega',
-      bacco: String(subHeader[3] || '').trim() || 'p/ Bacco'
-    };
-
-    const vazio = v => v === '' || v === null || v === undefined;
-    const linhas = [];
-    let categoria = '';
-    let itemSeq = 0;
-    for (let i = 2; i < rows.length; i++) {
-      const row = rows[i];
-      const nome = String(row[0] || '').trim();
-      const [, b, c, d] = row;
-      const isCategoria = nome && vazio(b) && vazio(c) && vazio(d);
-      if (isCategoria) { categoria = nome; itemSeq = 0; continue; }
-      if (vazio(b) && vazio(c) && vazio(d)) continue;
-      itemSeq++;
-      linhas.push({
-        categoria: categoria || 'Sem categoria',
-        item: `Item ${itemSeq}`,
-        total: typeof b === 'number' ? b : (parseFloat(b) || 0),
-        adega: typeof c === 'number' ? c : (parseFloat(c) || 0),
-        bacco: typeof d === 'number' ? d : (parseFloat(d) || 0),
-        foto: fotos[i] || null
-      });
-    }
-    res.json({ colunas, linhas });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
 
 function mesAtualKey() {
   const d = new Date();
