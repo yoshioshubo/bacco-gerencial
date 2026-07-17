@@ -91,7 +91,6 @@
     <div class="ct">Avaliações por mês e evolução da nota</div>
     <div class="leg">
       <span><span class="dot" style="background:#378ADD"></span>Qtd. Avaliações</span>
-      <span><span class="dot" style="background:#A32D2D"></span>Tendência exponencial</span>
       <span><span class="dot" style="background:#1D9E75"></span>Nota média</span>
     </div>
     <div style="position:relative;height:260px"><canvas id="cTrip"></canvas></div>
@@ -145,41 +144,51 @@ async function carregar() {
   const gc = dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)';
   const labels = dados.map(x => x.mesLabel.slice(0,3));
 
-  // Ajuste de regressão exponencial (y = a*e^(b*x)) sobre a quantidade de avaliações,
-  // via linearização: ln(y) = ln(a) + b*x, resolvido por mínimos quadrados
-  const fitExponencial = valores => {
-    const xs = valores.map((_, i) => i);
-    const lnY = valores.map(y => Math.log(Math.max(y, 0.0001)));
-    const n = xs.length;
-    const sumX = xs.reduce((a,b)=>a+b, 0);
-    const sumY = lnY.reduce((a,b)=>a+b, 0);
-    const sumXY = xs.reduce((a,x,i)=>a + x*lnY[i], 0);
-    const sumXX = xs.reduce((a,x)=>a + x*x, 0);
-    const denom = (n*sumXX - sumX*sumX) || 1;
-    const b = (n*sumXY - sumX*sumY) / denom;
-    const a = Math.exp((sumY - b*sumX) / n);
-    return xs.map(x => +(a * Math.exp(b*x)).toFixed(2));
-  };
   const avaliacoesArr = dados.map(x=>x.avaliacoes);
-  const tendenciaExp = fitExponencial(avaliacoesArr);
+  const notasArr = dados.map(x=>x.nota);
+
+  // Zoom no eixo da nota (em vez de 0–5 fixo) para deixar a variação bem mais visível
+  const notaMin = Math.min(...notasArr), notaMax = Math.max(...notasArr);
+  const folga = Math.max((notaMax - notaMin) * 0.25, 0.05);
+  const y1Min = Math.max(0, +(notaMin - folga).toFixed(2));
+  const y1Max = Math.min(5, +(notaMax + folga).toFixed(2));
+
+  // Plugin: escreve a quantidade de avaliações no topo de cada barra
+  const totalNoTopoPlugin = {
+    id: 'totalNoTopo',
+    afterDatasetsDraw(chart) {
+      const { ctx, scales: { x, y } } = chart;
+      ctx.save();
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = dark ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.75)';
+      ctx.textAlign = 'center';
+      avaliacoesArr.forEach((v, i) => {
+        const xPos = x.getPixelForValue(i);
+        const yPos = y.getPixelForValue(v);
+        ctx.fillText(v, xPos, yPos - 6);
+      });
+      ctx.restore();
+    }
+  };
 
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('cTrip'), {
+    plugins: [totalNoTopoPlugin],
     data: {
       labels,
       datasets: [
-        { type: 'bar', label: 'Avaliações', data: avaliacoesArr, backgroundColor: '#378ADD', borderRadius: 3, yAxisID: 'y', order: 2 },
-        { type: 'line', label: 'Tendência exponencial', data: tendenciaExp, borderColor: '#A32D2D', borderDash: [6,4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, yAxisID: 'y', order: 1 },
-        { type: 'line', label: 'Nota média', data: dados.map(x=>x.nota), borderColor: '#1D9E75', backgroundColor: '#1D9E75', tension: .3, pointRadius: 4, pointBackgroundColor: '#1D9E75', borderWidth: 2, yAxisID: 'y1', order: 0 }
+        { type: 'bar', label: 'Avaliações', data: avaliacoesArr, backgroundColor: '#378ADD', borderRadius: 3, yAxisID: 'y', order: 1 },
+        { type: 'line', label: 'Nota média', data: notasArr, borderColor: '#1D9E75', backgroundColor: '#1D9E75', tension: .3, pointRadius: 5, pointBackgroundColor: '#1D9E75', borderWidth: 3, yAxisID: 'y1', order: 0 }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
       plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false }, ticks: { color: tc, font: { size: 11, weight: '500' } } },
         y: { position: 'left', grid: { color: gc }, border: { display: false }, ticks: { color: tc, font: { size: 10 } }, title: { display: false } },
-        y1: { position: 'right', min: 0, max: 5, grid: { display: false }, border: { display: false }, ticks: { color: tc, font: { size: 10 } } }
+        y1: { position: 'right', min: y1Min, max: y1Max, grid: { display: false }, border: { display: false }, ticks: { color: tc, font: { size: 10 } } }
       }
     }
   });
