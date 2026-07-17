@@ -91,6 +91,7 @@
     <div class="ct">Avaliações por mês e evolução da nota</div>
     <div class="leg">
       <span><span class="dot" style="background:#378ADD"></span>Qtd. Avaliações</span>
+      <span><span class="dot" style="background:#A32D2D"></span>Tendência exponencial</span>
       <span><span class="dot" style="background:#1D9E75"></span>Nota média</span>
     </div>
     <div style="position:relative;height:260px"><canvas id="cTrip"></canvas></div>
@@ -144,13 +145,32 @@ async function carregar() {
   const gc = dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)';
   const labels = dados.map(x => x.mesLabel.slice(0,3));
 
+  // Ajuste de regressão exponencial (y = a*e^(b*x)) sobre a quantidade de avaliações,
+  // via linearização: ln(y) = ln(a) + b*x, resolvido por mínimos quadrados
+  const fitExponencial = valores => {
+    const xs = valores.map((_, i) => i);
+    const lnY = valores.map(y => Math.log(Math.max(y, 0.0001)));
+    const n = xs.length;
+    const sumX = xs.reduce((a,b)=>a+b, 0);
+    const sumY = lnY.reduce((a,b)=>a+b, 0);
+    const sumXY = xs.reduce((a,x,i)=>a + x*lnY[i], 0);
+    const sumXX = xs.reduce((a,x)=>a + x*x, 0);
+    const denom = (n*sumXX - sumX*sumX) || 1;
+    const b = (n*sumXY - sumX*sumY) / denom;
+    const a = Math.exp((sumY - b*sumX) / n);
+    return xs.map(x => +(a * Math.exp(b*x)).toFixed(2));
+  };
+  const avaliacoesArr = dados.map(x=>x.avaliacoes);
+  const tendenciaExp = fitExponencial(avaliacoesArr);
+
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('cTrip'), {
     data: {
       labels,
       datasets: [
-        { type: 'bar', label: 'Avaliações', data: dados.map(x=>x.avaliacoes), backgroundColor: '#378ADD', borderRadius: 3, yAxisID: 'y' },
-        { type: 'line', label: 'Nota média', data: dados.map(x=>x.nota), borderColor: '#1D9E75', backgroundColor: '#1D9E75', tension: .3, pointRadius: 4, pointBackgroundColor: '#1D9E75', borderWidth: 2, yAxisID: 'y1' }
+        { type: 'bar', label: 'Avaliações', data: avaliacoesArr, backgroundColor: '#378ADD', borderRadius: 3, yAxisID: 'y', order: 2 },
+        { type: 'line', label: 'Tendência exponencial', data: tendenciaExp, borderColor: '#A32D2D', borderDash: [6,4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, yAxisID: 'y', order: 1 },
+        { type: 'line', label: 'Nota média', data: dados.map(x=>x.nota), borderColor: '#1D9E75', backgroundColor: '#1D9E75', tension: .3, pointRadius: 4, pointBackgroundColor: '#1D9E75', borderWidth: 2, yAxisID: 'y1', order: 0 }
       ]
     },
     options: {
