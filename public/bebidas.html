@@ -203,8 +203,8 @@ function renderizar() {
     const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
     return `<tr>
       <td class="mono">${it.codigo}</td>
-      <td>${it.nome}</td>
-      <td class="mono">${it.tamanho}</td>
+      <td><input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizar('${it.codigo}','nome',this.value)"></td>
+      <td class="mono"><input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizar('${it.codigo}','tamanho',this.value)"></td>
       <td class="num">${N(it.estoqueInicial)}</td>
       <td class="num"><input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizar('${it.codigo}','vendas',this.value)"></td>
       <td class="num"><input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizar('${it.codigo}','entradas',this.value)"></td>

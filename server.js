@@ -1577,16 +1577,17 @@ app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
   res.json({ itens });
 });
 
+const CAMPOS_TEXTO_VINHO = ['observacao', 'nome', 'tamanho'];
 app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
-  if (!codigo || !['vendas','entradas','auditoria','observacao'].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao) são obrigatórios.' });
+  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_VINHO].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho) são obrigatórios.' });
   }
   const itens = loadVinhos();
   const item = itens.find(i => i.codigo === codigo);
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
-  if (campo === 'observacao') {
-    item.observacao = String(valor || '');
+  if (CAMPOS_TEXTO_VINHO.includes(campo)) {
+    item[campo] = String(valor || '');
   } else {
     item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
   }
