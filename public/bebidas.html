@@ -58,6 +58,8 @@
   .in{width:70px;padding:4px 6px;border:.5px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12.5px;text-align:right}
   .in:focus{outline:1.5px solid var(--green);border-color:var(--green)}
   .negativo{color:var(--red);font-weight:600}
+  .btn-inserir{font-size:10.5px;padding:3px 8px;border-radius:5px;border:none;background:var(--green);color:#fff;cursor:pointer}
+  .btn-inserir:hover{opacity:.9}
   .empty{text-align:center;padding:3rem;color:var(--hint);font-size:14px}
 </style>
 </head>
@@ -207,7 +209,15 @@ function renderizar() {
       <td class="mono"><input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizar('${it.codigo}','tamanho',this.value)"></td>
       <td class="num">${N(it.estoqueInicial)}</td>
       <td class="num"><input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizar('${it.codigo}','vendas',this.value)"></td>
-      <td class="num"><input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizar('${it.codigo}','entradas',this.value)"></td>
+      <td class="num">
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          <strong>${N(it.entradas)}</strong>
+          <div style="display:flex;gap:4px">
+            <input class="in" style="width:50px" type="number" step="any" placeholder="+qtd" id="add-${it.codigo}">
+            <button class="btn-inserir" onclick="inserirEntrada('${it.codigo}')">Inserir</button>
+          </div>
+        </div>
+      </td>
       <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
       <td class="num"><input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizar('${it.codigo}','auditoria',this.value)"></td>
       <td><input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)"></td>
@@ -225,6 +235,22 @@ async function atualizar(codigo, campo, valor) {
     const idx = itensCache.findIndex(i => i.codigo === codigo);
     if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
     if (viewAtual === 'auditoria') carregar(); else renderizar();
+  }
+}
+
+async function inserirEntrada(codigo) {
+  const input = document.getElementById(`add-${codigo}`);
+  const valor = input.value;
+  if (!valor || +valor === 0) return;
+  const r = await fetch('/api/bebidas/vinhos/inserir-entrada', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, valor })
+  });
+  const d = await r.json();
+  if (d.item) {
+    const idx = itensCache.findIndex(i => i.codigo === codigo);
+    if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
+    renderizar();
   }
 }
 

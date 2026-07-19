@@ -109,20 +109,40 @@ const SEED_VINHOS_RAW = [
   ['000941','vinho white blend 3tons','UN',3]
 ];
 
-function seedVinhos() {
-  return SEED_VINHOS_RAW.map(([codigo, nomeRaw, unidade, estoqueInicial]) => {
+// Vinhos que chegaram fora do estoque inicial contado — entram com Estoque Inicial 0;
+// as quantidades são lançadas manualmente no campo Entradas (cumulativo)
+const NOVOS_VINHOS_RAW = [
+  ['N001', "ita caleo montepulciano d'abruzzo 750 ml", 'UN', 0],
+  ['N002', 'codici primitivo puglia 750 ml', 'UN', 0],
+  ['N003', 'le casine chianti 750 ml', 'UN', 0],
+  ['N004', 'cartuxa ea tinto 750 ml', 'UN', 0],
+  ['N005', 'tantehue carmenère 750 ml', 'UN', 0],
+  ['N006', 'santa helena cabernet sauvignon 375 ml', 'UN', 0],
+  ['N007', 'cartuxa ea alicante bouschet 750 ml', 'UN', 0],
+  ['N008', 'cartuxa ea aragonez 750 ml', 'UN', 0],
+  ['N009', 'cartuxa ea trincadeira 750 ml', 'UN', 0]
+];
+
+function seedItensDe(lista) {
+  return lista.map(([codigo, nomeRaw, unidade, estoqueInicial]) => {
     const { nome, tamanho } = extraiTamanhoENome(nomeRaw, unidade);
     return { codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' };
   });
 }
+function seedVinhos() { return seedItensDe(SEED_VINHOS_RAW); }
 
 function loadVinhos() {
-  try { return JSON.parse(fs.readFileSync(BEBIDAS_VINHOS_FILE, 'utf8')); }
-  catch {
-    const inicial = seedVinhos();
-    fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(inicial, null, 2));
-    return inicial;
+  const existeArquivo = fs.existsSync(BEBIDAS_VINHOS_FILE);
+  let itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_VINHOS_FILE, 'utf8')) : seedItensDe(SEED_VINHOS_RAW);
+
+  // Mescla vinhos novos que ainda não estão na base salva (sem sobrescrever os já existentes/editados)
+  const codigosExistentes = new Set(itens.map(i => i.codigo));
+  let mudou = !existeArquivo;
+  for (const novo of seedItensDe(NOVOS_VINHOS_RAW)) {
+    if (!codigosExistentes.has(novo.codigo)) { itens.push(novo); mudou = true; }
   }
+  if (mudou) fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(itens, null, 2));
+  return itens;
 }
 function saveVinhos(itens) { fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(itens, null, 2)); }
 
@@ -1591,6 +1611,19 @@ app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   } else {
     item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
   }
+  saveVinhos(itens);
+  res.json({ ok: true, item: comEstoqueFinal(item) });
+});
+
+// Lançamento cumulativo: soma ao valor já existente em vez de sobrescrever (botão "Inserir")
+app.post('/api/bebidas/vinhos/inserir-entrada', (req, res) => {
+  const { codigo, valor } = req.body;
+  const qtd = +valor;
+  if (!codigo || !qtd) return res.status(400).json({ error: 'codigo e valor (diferente de zero) são obrigatórios.' });
+  const itens = loadVinhos();
+  const item = itens.find(i => i.codigo === codigo);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
+  item.entradas = +((item.entradas || 0) + qtd).toFixed(3);
   saveVinhos(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
