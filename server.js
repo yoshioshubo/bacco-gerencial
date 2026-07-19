@@ -15,6 +15,7 @@ const TOKENS_FILE  = path.join(DATA_DIR, 'tokens.json');
 const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
+const BEBIDAS_VINHOS_FILE = path.join(DATA_DIR, 'bebidas-vinhos.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -63,6 +64,67 @@ function loadCorrecoes() {
   catch { return { auditoria: {}, reatribuidos: {} }; }
 }
 function saveCorrecoes(c) { fs.writeFileSync(CUSTOS_CORRECOES_FILE, JSON.stringify(c, null, 2)); }
+
+// ── Bebidas / Vinhos — base inicial de estoque ────────────────────────────────
+// Extrai o tamanho da embalagem (750ml, 375ml, 5lt...) do nome; usa a unidade (UN/GF) como fallback
+function extraiTamanhoENome(nomeRaw, unidadeMedida) {
+  const m = nomeRaw.match(/(\d+[.,]?\d*\s?(?:ml|lt|l)\b)/i);
+  let tamanho = unidadeMedida;
+  let nome = nomeRaw;
+  if (m) {
+    tamanho = m[1].trim();
+    nome = (nomeRaw.slice(0, m.index) + nomeRaw.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim();
+  }
+  nome = nome.replace(/^vinhos?\s+|^vin\s+/i, '').trim();
+  return { nome, tamanho };
+}
+
+const SEED_VINHOS_RAW = [
+  ['100051','vin arg cordero cabernet tto 750ml','GF',1],
+  ['000415','espum. casa geraldo natural brut','UN',3],
+  ['001198','espumante alud branco 750ml','UN',1],
+  ['1920','espumante chandon brut 750ml','GF',3],
+  ['001202','vinho adele branco 750ml','UN',2],
+  ['001203','vinho adele rose 750ml','UN',2],
+  ['000935','vinho anubis malbec 750ml','UN',3],
+  ['001199','vinho arcaia pinot grigio 750ml','UN',2],
+  ['001208','vinho aresti sel chardonnay 750ml','UN',5],
+  ['001204','vinho azul ventozelo','UN',2],
+  ['000934','vinho bons ventos rose 375ml','UN',1],
+  ['001200','vinho burdizzo primitivo 750ml','UN',3],
+  ['001214','vinho cavas de oro blen rosado 750ml','UN',2],
+  ['001213','vinho cavas de oro blend branco 750ml','UN',3],
+  ['001201','vinho corsarini moltepulciano','UN',2],
+  ['45645','vinho dom de minas cabernet franc 750ml','UN',1],
+  ['20026','vinho e.a. fundacao eugenio de almeida','GF',3],
+  ['000701','vinho folha do meio colheita branco','UN',5],
+  ['000700','vinho folha do meio colheita tinto','UN',2],
+  ['001211','vinho humberto can denario cab sauv 750m','UN',2],
+  ['001212','vinho humberto canale den malbec 750ml','UN',1],
+  ['001210','vinho los aljibes tinto 750ml','UN',3],
+  ['000423','vinho luiz porto chardonnay 750ml','UN',10],
+  ['001209','vinho spinoglio tierra alta tannat','UN',3],
+  ['20081','vinho tinto bag 5 lt','UN',1],
+  ['001216','vinho villa rosa colheita tinto','UN',2],
+  ['000941','vinho white blend 3tons','UN',3]
+];
+
+function seedVinhos() {
+  return SEED_VINHOS_RAW.map(([codigo, nomeRaw, unidade, estoqueInicial]) => {
+    const { nome, tamanho } = extraiTamanhoENome(nomeRaw, unidade);
+    return { codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null };
+  });
+}
+
+function loadVinhos() {
+  try { return JSON.parse(fs.readFileSync(BEBIDAS_VINHOS_FILE, 'utf8')); }
+  catch {
+    const inicial = seedVinhos();
+    fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(inicial, null, 2));
+    return inicial;
+  }
+}
+function saveVinhos(itens) { fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(itens, null, 2)); }
 
 // ── Sessão e middleware ───────────────────────────────────────────────────────
 app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false,
@@ -1462,6 +1524,28 @@ app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed
 app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
 app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
 app.get('/tripadvisor', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tripadvisor.html')));
+app.get('/bebidas', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bebidas.html')));
+
+app.get('/api/bebidas/vinhos', (req, res) => {
+  const itens = loadVinhos().map(it => ({
+    ...it,
+    estoqueFinal: +(it.estoqueInicial + (it.entradas||0) - (it.vendas||0)).toFixed(3)
+  })).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
+  const { codigo, campo, valor } = req.body;
+  if (!codigo || !['vendas','entradas','auditoria'].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria) são obrigatórios.' });
+  }
+  const itens = loadVinhos();
+  const item = itens.find(i => i.codigo === codigo);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
+  item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+  saveVinhos(itens);
+  res.json({ ok: true, item: { ...item, estoqueFinal: +(item.estoqueInicial + (item.entradas||0) - (item.vendas||0)).toFixed(3) } });
+});
 
 function mesAtualKey() {
   const d = new Date();
