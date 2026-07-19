@@ -16,6 +16,7 @@ const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
 const BEBIDAS_VINHOS_FILE = path.join(DATA_DIR, 'bebidas-vinhos.json');
+const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -120,7 +121,22 @@ const NOVOS_VINHOS_RAW = [
   ['N006', 'santa helena cabernet sauvignon 375 ml', 'UN', 0],
   ['N007', 'cartuxa ea alicante bouschet 750 ml', 'UN', 0],
   ['N008', 'cartuxa ea aragonez 750 ml', 'UN', 0],
-  ['N009', 'cartuxa ea trincadeira 750 ml', 'UN', 0]
+  ['N009', 'cartuxa ea trincadeira 750 ml', 'UN', 0],
+  ['06020043', 'por bons ventos tto 375ml', 'UN', 0],
+  ['06020045', 'por bons ventos tto 750ml', 'UN', 0],
+  ['VCC0003', 'arg cordero con piel de lobo cabernet sauvignon 750ml', 'UN', 0],
+  ['14004', 'chi tarapaca reserva merlot 750ml', 'UN', 0],
+  ['WC0109', 'arg cordero con piel de lobo malbec 750ml', 'UN', 0]
+];
+
+// Lançamentos de entrada iniciais que só podem ser aplicados uma vez (marca em BEBIDAS_MIGRACOES_FILE)
+const ENTRADAS_INICIAIS_MIGRACAO = [
+  { id: 'entrada-06020043-2026-07', codigo: '06020043', delta: 2 },
+  { id: 'entrada-06020045-2026-07', codigo: '06020045', delta: 3 },
+  { id: 'entrada-VCC0003-2026-07',  codigo: 'VCC0003',  delta: 3 },
+  { id: 'entrada-14004-2026-07',    codigo: '14004',    delta: 3 },
+  { id: 'entrada-WC0109-2026-07',   codigo: 'WC0109',   delta: 3 },
+  { id: 'entrada-N005-200244-2026-07', codigo: 'N005',  delta: 3 } // Tantehue Carmenère já cadastrado
 ];
 
 function seedItensDe(lista) {
@@ -141,6 +157,21 @@ function loadVinhos() {
   for (const novo of seedItensDe(NOVOS_VINHOS_RAW)) {
     if (!codigosExistentes.has(novo.codigo)) { itens.push(novo); mudou = true; }
   }
+
+  // Aplica lançamentos de entrada iniciais uma única vez
+  const migracoes = fs.existsSync(BEBIDAS_MIGRACOES_FILE)
+    ? JSON.parse(fs.readFileSync(BEBIDAS_MIGRACOES_FILE, 'utf8'))
+    : { aplicadas: [] };
+  let migracoesMudaram = false;
+  for (const m of ENTRADAS_INICIAIS_MIGRACAO) {
+    if (migracoes.aplicadas.includes(m.id)) continue;
+    const item = itens.find(i => i.codigo === m.codigo);
+    if (item) { item.entradas = +((item.entradas || 0) + m.delta).toFixed(3); mudou = true; }
+    migracoes.aplicadas.push(m.id);
+    migracoesMudaram = true;
+  }
+  if (migracoesMudaram) fs.writeFileSync(BEBIDAS_MIGRACOES_FILE, JSON.stringify(migracoes, null, 2));
+
   if (mudou) fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(itens, null, 2));
   return itens;
 }
