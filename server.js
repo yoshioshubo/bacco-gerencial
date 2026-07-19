@@ -1383,7 +1383,7 @@ function apurarVendasVinhosDoMes(texto) {
   for (const item of itensEstoque) {
     const chave = palavraChaveVinho(item.nome);
     const qtdVendida = porPalavraChave[chave] || 0;
-    item.vendas = qtdVendida > 0 ? -(+qtdVendida.toFixed(2)) : 0;
+    item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
   }
   saveVinhos(itensEstoque);
 }
