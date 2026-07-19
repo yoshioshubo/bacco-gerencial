@@ -87,9 +87,10 @@
   </div>
 
   <div class="subtabbar">
-    <button class="subtab active" id="btnVinhos" onclick="trocarTipo('vinhos')">Vinhos</button>
+    <button class="subtab active" id="btnVinhos" onclick="trocarView('lista')">Vinhos</button>
     <button class="subtab" disabled title="Em breve">Bebidas Alcoólicas</button>
     <button class="subtab" disabled title="Em breve">Não Alcoólicas</button>
+    <button class="subtab" id="btnAuditoria" onclick="trocarView('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
   </div>
 
   <div class="resumo">
@@ -101,7 +102,7 @@
 
   <div class="tcard">
     <table id="tbl">
-      <thead>
+      <thead id="thead">
         <tr>
           <th>Código</th>
           <th onclick="ordenarPor('nome')">Vinho ↕</th>
@@ -111,6 +112,7 @@
           <th class="num">Entradas</th>
           <th class="num">Estoque Final</th>
           <th class="num">Auditoria (31/07/2026)</th>
+          <th>Observação</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -124,12 +126,26 @@ document.getElementById('logoBox').innerHTML = `<img src="data:image/png;base64,
 const N = v => (v ?? '').toLocaleString ? v.toLocaleString('pt-BR', {maximumFractionDigits:3}) : v;
 let itensCache = [];
 let ordemCampo = 'nome', ordemAsc = true;
+let viewAtual = 'lista';
 
 async function carregar() {
-  const r = await fetch('/api/bebidas/vinhos');
-  const d = await r.json();
-  itensCache = d.itens || [];
+  if (viewAtual === 'auditoria') {
+    const r = await fetch('/api/bebidas/vinhos/auditoria');
+    const d = await r.json();
+    itensCache = d.itens || [];
+  } else {
+    const r = await fetch('/api/bebidas/vinhos');
+    const d = await r.json();
+    itensCache = d.itens || [];
+  }
   renderizar();
+}
+
+function trocarView(view) {
+  viewAtual = view;
+  document.getElementById('btnVinhos').classList.toggle('active', view === 'lista');
+  document.getElementById('btnAuditoria').classList.toggle('active', view === 'auditoria');
+  carregar();
 }
 
 function ordenarPor(campo) {
@@ -143,15 +159,43 @@ function renderizar() {
     return ordemAsc ? r : -r;
   });
 
+  const thead = document.getElementById('thead');
+  const tbody = document.getElementById('tbody');
+
+  if (viewAtual === 'auditoria') {
+    document.getElementById('phSub').textContent = `${itens.length} vinhos com divergência entre estoque e contagem física`;
+    thead.innerHTML = `<tr>
+      <th>Código</th><th onclick="ordenarPor('nome')">Vinho ↕</th><th class="num">Estoque Final (sistema)</th>
+      <th class="num">Contagem Física</th><th class="num">Diferença</th><th>Observação</th></tr>`;
+    if (!itens.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">Nenhuma divergência encontrada — tudo bate com a contagem física.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = itens.map(it => `
+      <tr>
+        <td class="mono">${it.codigo}</td>
+        <td>${it.nome}</td>
+        <td class="num">${N(it.estoqueFinal)}</td>
+        <td class="num">${N(it.auditoria)}</td>
+        <td class="num negativo">${it.diferenca > 0 ? '+' : ''}${N(it.diferenca)}</td>
+        <td><input class="in" style="width:220px;text-align:left" type="text" placeholder="Justificativa…" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)"></td>
+      </tr>`).join('');
+    return;
+  }
+
+  thead.innerHTML = `<tr>
+    <th>Código</th><th onclick="ordenarPor('nome')">Vinho ↕</th><th>Tamanho</th>
+    <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
+    <th class="num">Estoque Final</th><th class="num">Auditoria (31/07/2026)</th><th>Observação</th></tr>`;
+
   document.getElementById('phSub').textContent = `${itens.length} vinhos cadastrados`;
   document.getElementById('rQtd').textContent = itens.length;
   document.getElementById('rInicial').textContent = N(itens.reduce((s,i)=>s+i.estoqueInicial,0));
   document.getElementById('rFinal').textContent = N(itens.reduce((s,i)=>s+i.estoqueFinal,0));
   document.getElementById('rAuditados').textContent = itens.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
-  const tbody = document.getElementById('tbody');
   if (!itens.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">Nenhum vinho cadastrado.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">Nenhum vinho cadastrado.</td></tr>`;
     return;
   }
 
@@ -166,6 +210,7 @@ function renderizar() {
       <td class="num"><input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizar('${it.codigo}','entradas',this.value)"></td>
       <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
       <td class="num"><input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizar('${it.codigo}','auditoria',this.value)"></td>
+      <td><input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)"></td>
     </tr>`;
   }).join('');
 }
@@ -179,12 +224,8 @@ async function atualizar(codigo, campo, valor) {
   if (d.item) {
     const idx = itensCache.findIndex(i => i.codigo === codigo);
     if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
-    renderizar();
+    if (viewAtual === 'auditoria') carregar(); else renderizar();
   }
-}
-
-function trocarTipo(tipo) {
-  // Só "vinhos" está implementado por enquanto
 }
 
 carregar();

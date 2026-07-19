@@ -112,7 +112,7 @@ const SEED_VINHOS_RAW = [
 function seedVinhos() {
   return SEED_VINHOS_RAW.map(([codigo, nomeRaw, unidade, estoqueInicial]) => {
     const { nome, tamanho } = extraiTamanhoENome(nomeRaw, unidade);
-    return { codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null };
+    return { codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' };
   });
 }
 
@@ -875,6 +875,11 @@ async function sincronizar() {
     const vendas   = parseVendas(vText);
     const ocupacao = parseOcupacao(oText);
     dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes], mes, caedMap[mes]);
+
+    // Apura vendas de vinho do mês corrente (ciclo mensal — recalcula do zero a cada sincronização)
+    if (mes === mesAtualKey() && vText) {
+      try { apurarVendasVinhosDoMes(vText); } catch(e) { console.warn('[Bebidas/Vinhos]', e.message); }
+    }
   }
 
   const result = { sincAt: new Date().toISOString(), meses, dados, eventosRaw: eventosMap, caedRaw: caedMap };
@@ -1355,6 +1360,34 @@ app.get('/api/debug-produtos', async (req, res) => {
 });
 
 // ── Relatório de vinhos (garrafas e taças) desde uma data ────────────────────
+// Primeira palavra "significativa" do nome (ignora conectivos/descrições genéricas) — usada
+// para casar o nome do vinho na base de estoque com o nome extraído do PDV
+const STOPWORDS_VINHO = new Set(['DE','DO','DA','DOS','DAS','TINTO','BRANCO','ROSE','ROSADO','UN','GF','TAÇA','TACA','VINHO','VINHOS','VIN','750ML','375ML','ESPUMANTE','ESPUM']);
+function palavraChaveVinho(nome) {
+  const palavras = normalizaTexto(nome).split(/\s+/).filter(Boolean);
+  return palavras.find(p => p.length >= 3 && !STOPWORDS_VINHO.has(p)) || palavras[0] || '';
+}
+
+// Apura as vendas de vinho do mês (a partir do texto do PDF de vendas) e atualiza o campo
+// "vendas" (negativo) de cada item da base de estoque, casando pela palavra-chave do nome
+function apurarVendasVinhosDoMes(texto) {
+  const itensPdv = extrairItensVinho(texto); // [{data, nome, tipo, qtd}]
+  const porPalavraChave = {};
+  for (const it of itensPdv) {
+    const chave = palavraChaveVinho(it.nome);
+    if (!chave) continue;
+    porPalavraChave[chave] = (porPalavraChave[chave] || 0) + it.qtd;
+  }
+
+  const itensEstoque = loadVinhos();
+  for (const item of itensEstoque) {
+    const chave = palavraChaveVinho(item.nome);
+    const qtdVendida = porPalavraChave[chave] || 0;
+    item.vendas = qtdVendida > 0 ? -(+qtdVendida.toFixed(2)) : 0;
+  }
+  saveVinhos(itensEstoque);
+}
+
 function extrairItensVinho(texto) {
   const linhas = texto.split('\n');
   const itens = [];
@@ -1526,25 +1559,39 @@ app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cu
 app.get('/tripadvisor', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tripadvisor.html')));
 app.get('/bebidas', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bebidas.html')));
 
+function comEstoqueFinal(it) {
+  // vendas é negativo (saída), então soma normalmente
+  return { ...it, estoqueFinal: +(it.estoqueInicial + (it.entradas||0) + (it.vendas||0)).toFixed(3) };
+}
+
 app.get('/api/bebidas/vinhos', (req, res) => {
-  const itens = loadVinhos().map(it => ({
-    ...it,
-    estoqueFinal: +(it.estoqueInicial + (it.entradas||0) - (it.vendas||0)).toFixed(3)
-  })).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const itens = loadVinhos().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
+  const itens = loadVinhos().map(comEstoqueFinal)
+    .filter(it => it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal)
+    .map(it => ({ ...it, diferenca: +((+it.auditoria) - it.estoqueFinal).toFixed(3) }))
+    .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   res.json({ itens });
 });
 
 app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
-  if (!codigo || !['vendas','entradas','auditoria'].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria) são obrigatórios.' });
+  if (!codigo || !['vendas','entradas','auditoria','observacao'].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao) são obrigatórios.' });
   }
   const itens = loadVinhos();
   const item = itens.find(i => i.codigo === codigo);
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
-  item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+  if (campo === 'observacao') {
+    item.observacao = String(valor || '');
+  } else {
+    item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+  }
   saveVinhos(itens);
-  res.json({ ok: true, item: { ...item, estoqueFinal: +(item.estoqueInicial + (item.entradas||0) - (item.vendas||0)).toFixed(3) } });
+  res.json({ ok: true, item: comEstoqueFinal(item) });
 });
 
 function mesAtualKey() {
