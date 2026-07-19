@@ -86,6 +86,7 @@
       <h1>Controle de Bebidas</h1>
       <p id="phSub">Carregando…</p>
     </div>
+    <button class="btn-inserir" id="btnEditar" onclick="toggleEdicao()" style="background:var(--blue)">✏️ Editar campos</button>
   </div>
 
   <div class="subtabbar">
@@ -129,6 +130,15 @@ const N = v => (v ?? '').toLocaleString ? v.toLocaleString('pt-BR', {maximumFrac
 let itensCache = [];
 let ordemCampo = 'nome', ordemAsc = true;
 let viewAtual = 'lista';
+let modoEdicao = false;
+
+function toggleEdicao() {
+  modoEdicao = !modoEdicao;
+  const btn = document.getElementById('btnEditar');
+  btn.textContent = modoEdicao ? '✓ Concluir edição' : '✏️ Editar campos';
+  btn.style.background = modoEdicao ? 'var(--green)' : 'var(--blue)';
+  renderizar();
+}
 
 async function carregar() {
   if (viewAtual === 'auditoria') {
@@ -203,12 +213,29 @@ function renderizar() {
 
   tbody.innerHTML = itens.map(it => {
     const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
+
+    const nomeCell = modoEdicao
+      ? `<input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizar('${it.codigo}','nome',this.value)">`
+      : it.nome;
+    const tamanhoCell = modoEdicao
+      ? `<input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizar('${it.codigo}','tamanho',this.value)">`
+      : it.tamanho;
+    const vendasCell = modoEdicao
+      ? `<input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizar('${it.codigo}','vendas',this.value)">`
+      : `<span class="${(it.vendas||0) < 0 ? 'negativo' : ''}">${N(it.vendas ?? 0)}</span>`;
+    const auditoriaCell = modoEdicao
+      ? `<input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizar('${it.codigo}','auditoria',this.value)">`
+      : (it.auditoria !== null && it.auditoria !== undefined ? `<span class="${divergente ? 'negativo' : ''}">${N(it.auditoria)}</span>` : '—');
+    const obsCell = modoEdicao
+      ? `<input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)">`
+      : (it.observacao || '—');
+
     return `<tr>
       <td class="mono">${it.codigo}</td>
-      <td><input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizar('${it.codigo}','nome',this.value)"></td>
-      <td class="mono"><input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizar('${it.codigo}','tamanho',this.value)"></td>
+      <td>${nomeCell}</td>
+      <td class="mono">${tamanhoCell}</td>
       <td class="num">${N(it.estoqueInicial)}</td>
-      <td class="num"><input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizar('${it.codigo}','vendas',this.value)"></td>
+      <td class="num">${vendasCell}</td>
       <td class="num">
         <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
           <strong>${N(it.entradas)}</strong>
@@ -219,8 +246,8 @@ function renderizar() {
         </div>
       </td>
       <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
-      <td class="num"><input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizar('${it.codigo}','auditoria',this.value)"></td>
-      <td><input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)"></td>
+      <td class="num">${auditoriaCell}</td>
+      <td>${obsCell}</td>
     </tr>`;
   }).join('');
 }
