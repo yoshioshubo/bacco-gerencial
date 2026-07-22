@@ -63,6 +63,7 @@
   .badge-status{font-size:10px;padding:2px 8px;border-radius:5px;font-weight:600;white-space:nowrap}
   .badge-status.realizado{background:var(--green-bg);color:var(--green-dk)}
   .badge-status.agendado{background:var(--blue-bg);color:var(--blue-dk)}
+  .badge-status.em_andamento{background:var(--amber-bg);color:var(--amber)}
   .empty{text-align:center;padding:3rem;color:var(--hint);font-size:14px}
 
   .subtabbar{display:flex;gap:6px;margin-bottom:1.25rem}
@@ -216,7 +217,7 @@ async function carregar(mes) {
       <td class="num">${R(l.diarias)}</td>
       <td><span class="badge-pensao">${l.tipoPensao}</span></td>
       <td class="num"><strong>${BRL(l.valor)}</strong></td>
-      <td><span class="badge-status ${l.status}">${l.status === 'agendado' ? 'Agendado' : 'Realizado'}</span></td>
+      <td><span class="badge-status ${l.status}">${l.status === 'agendado' ? 'Agendado' : l.status === 'em_andamento' ? 'Em andamento' : 'Realizado'}</span></td>
     </tr>`).join('');
 
   tfoot.innerHTML = `<tr>

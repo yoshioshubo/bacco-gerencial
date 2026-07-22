@@ -1725,13 +1725,21 @@ app.get('/api/caed', (req, res) => {
     pensaoCompleta: raw.pensaoCompleta, faturamento: raw.totalFaturamento
   };
 
-  // Marca cada hóspede como já realizado ou ainda agendado (só é relevante no mês corrente)
+  // Marca cada hóspede como agendado (check-in futuro), em andamento (já entrou, ainda não saiu)
+  // ou realizado (check-out já passou) — só relevante para o mês corrente
   const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
   const linhas = (raw.linhas || []).map(l => {
     let status = 'realizado';
     if (l.checkin) {
-      const [dd, mm, yyyy] = l.checkin.split('/');
-      if (new Date(+yyyy, +mm - 1, +dd) > hoje) status = 'agendado';
+      const [ddIn, mmIn, yyyyIn] = l.checkin.split('/');
+      const dataCheckin = new Date(+yyyyIn, +mmIn - 1, +ddIn);
+      if (dataCheckin > hoje) {
+        status = 'agendado';
+      } else if (l.checkout) {
+        const [ddOut, mmOut, yyyyOut] = l.checkout.split('/');
+        const dataCheckout = new Date(+yyyyOut, +mmOut - 1, +ddOut);
+        if (dataCheckout > hoje) status = 'em_andamento';
+      }
     }
     return { ...l, status };
   });
