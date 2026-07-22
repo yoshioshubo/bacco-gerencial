@@ -97,6 +97,11 @@
     <button class="subtab" id="btnAuditoria" onclick="trocarView('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
   </div>
 
+  <div class="resumo" style="grid-template-columns:repeat(2,1fr);margin-bottom:8px">
+    <div class="rcard"><div class="lbl">Venda Taça Vinho Tinto</div><div class="val" id="rTacaTinto">—</div></div>
+    <div class="rcard"><div class="lbl">Venda Taça Vinho Branco</div><div class="val" id="rTacaBranco">—</div></div>
+  </div>
+
   <div class="resumo">
     <div class="rcard"><div class="lbl">Itens cadastrados</div><div class="val" id="rQtd">—</div></div>
     <div class="rcard"><div class="lbl">Estoque Inicial (total)</div><div class="val" id="rInicial">—</div></div>
@@ -152,6 +157,8 @@ async function carregar() {
     const r = await fetch('/api/bebidas/vinhos');
     const d = await r.json();
     itensCache = d.itens || [];
+    document.getElementById('rTacaTinto').textContent = N(d.tacaTinto || 0);
+    document.getElementById('rTacaBranco').textContent = N(d.tacaBranco || 0);
   }
   renderizar();
 }

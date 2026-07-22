@@ -16,6 +16,7 @@ const RESULT_FILE  = path.join(DATA_DIR, 'gerencial.json');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
 const BEBIDAS_VINHOS_FILE = path.join(DATA_DIR, 'bebidas-vinhos.json');
+const BEBIDAS_TACA_FILE = path.join(DATA_DIR, 'bebidas-vinhos-taca.json');
 const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
@@ -1424,7 +1425,12 @@ function palavraChaveVinho(nome) {
 function apurarVendasVinhosDoMes(texto) {
   const itensPdv = extrairItensVinho(texto); // [{data, nome, tipo, qtd}]
   const porPalavraChave = {};
+  let tacaTinto = 0, tacaBranco = 0;
   for (const it of itensPdv) {
+    if (it.tipo === 'Taça') {
+      if (/TINTO/.test(it.nome)) { tacaTinto += it.qtd; continue; }
+      if (/BRANCO/.test(it.nome)) { tacaBranco += it.qtd; continue; }
+    }
     const chave = palavraChaveVinho(it.nome);
     if (!chave) continue;
     porPalavraChave[chave] = (porPalavraChave[chave] || 0) + it.qtd;
@@ -1437,6 +1443,9 @@ function apurarVendasVinhosDoMes(texto) {
     item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
   }
   saveVinhos(itensEstoque);
+  fs.writeFileSync(BEBIDAS_TACA_FILE, JSON.stringify({
+    tacaTinto: Math.round(tacaTinto), tacaBranco: Math.round(tacaBranco), atualizadoEm: new Date().toISOString()
+  }, null, 2));
 }
 
 function extrairItensVinho(texto) {
@@ -1615,9 +1624,15 @@ function comEstoqueFinal(it) {
   return { ...it, estoqueFinal: +(it.estoqueInicial + (it.entradas||0) + (it.vendas||0)).toFixed(3) };
 }
 
+function loadTacas() {
+  try { return JSON.parse(fs.readFileSync(BEBIDAS_TACA_FILE, 'utf8')); }
+  catch { return { tacaTinto: 0, tacaBranco: 0, atualizadoEm: null }; }
+}
+
 app.get('/api/bebidas/vinhos', (req, res) => {
   const itens = loadVinhos().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  res.json({ itens });
+  const { tacaTinto, tacaBranco } = loadTacas();
+  res.json({ itens, tacaTinto, tacaBranco });
 });
 
 app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
