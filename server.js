@@ -1620,7 +1620,8 @@ app.get('/api/dados', (req, res) => {
 });
 
 app.get('/eventos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'eventos.html')));
-app.get('/caed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'caed.html')));
+app.get('/caed', (req, res) => res.redirect('/licitacoes'));
+app.get('/licitacoes', (req, res) => res.sendFile(path.join(__dirname, 'public', 'licitacoes.html')));
 app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'public', 'concessionarias.html')));
 app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
 app.get('/tripadvisor', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tripadvisor.html')));
