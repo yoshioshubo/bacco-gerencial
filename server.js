@@ -1412,34 +1412,45 @@ app.get('/api/debug-produtos', async (req, res) => {
 });
 
 // ── Relatório de vinhos (garrafas e taças) desde uma data ────────────────────
-// Primeira palavra "significativa" do nome (ignora conectivos/descrições genéricas) — usada
+// Palavras "significativas" do nome (ignora conectivos/descrições genéricas) — usadas
 // para casar o nome do vinho na base de estoque com o nome extraído do PDV
-const STOPWORDS_VINHO = new Set(['DE','DO','DA','DOS','DAS','TINTO','BRANCO','ROSE','ROSADO','UN','GF','TAÇA','TACA','VINHO','VINHOS','VIN','750ML','375ML','ESPUMANTE','ESPUM']);
-function palavraChaveVinho(nome) {
-  const palavras = normalizaTexto(nome).split(/\s+/).filter(Boolean);
-  return palavras.find(p => p.length >= 3 && !STOPWORDS_VINHO.has(p)) || palavras[0] || '';
+const STOPWORDS_VINHO = new Set(['DE','DO','DA','DOS','DAS','COM','TINTO','BRANCO','ROSE','ROSADO','UN','GF','TAÇA','TACA','VINHO','VINHOS','VIN','750ML','375ML','ESPUMANTE','ESPUM','ML','LT']);
+function palavrasSignificativas(nome) {
+  return normalizaTexto(nome).split(/\s+/).filter(p => p.length >= 3 && !STOPWORDS_VINHO.has(p));
 }
 
 // Apura as vendas de vinho do mês (a partir do texto do PDF de vendas) e atualiza o campo
-// "vendas" (negativo) de cada item da base de estoque, casando pela palavra-chave do nome
+// "vendas" (negativo) de cada item da base de estoque. Casa cada linha do PDV com o item da
+// base que tiver MAIS palavras em comum (não apenas a primeira), para não duplicar a mesma
+// venda em vários itens que compartilham a marca (ex: "Arg Cordero..." em 3 variações)
 function apurarVendasVinhosDoMes(texto) {
   const itensPdv = extrairItensVinho(texto); // [{data, nome, tipo, qtd}]
-  const porPalavraChave = {};
+  const itensEstoque = loadVinhos();
+  const palavrasPorItem = itensEstoque.map(it => palavrasSignificativas(it.nome));
+
+  const porCodigo = {};
   let tacaTinto = 0, tacaBranco = 0;
   for (const it of itensPdv) {
     if (it.tipo === 'Taça') {
       if (/TINTO/.test(it.nome)) { tacaTinto += it.qtd; continue; }
       if (/BRANCO/.test(it.nome)) { tacaBranco += it.qtd; continue; }
     }
-    const chave = palavraChaveVinho(it.nome);
-    if (!chave) continue;
-    porPalavraChave[chave] = (porPalavraChave[chave] || 0) + it.qtd;
+    const palavrasPdv = new Set(palavrasSignificativas(it.nome));
+    if (!palavrasPdv.size) continue;
+
+    let melhorIdx = -1, melhorScore = 0;
+    itensEstoque.forEach((_, idx) => {
+      const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
+      if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
+    });
+    if (melhorIdx === -1) continue; // nenhuma correspondência — não atribui a ninguém
+
+    const codigo = itensEstoque[melhorIdx].codigo;
+    porCodigo[codigo] = (porCodigo[codigo] || 0) + it.qtd;
   }
 
-  const itensEstoque = loadVinhos();
   for (const item of itensEstoque) {
-    const chave = palavraChaveVinho(item.nome);
-    const qtdVendida = porPalavraChave[chave] || 0;
+    const qtdVendida = porCodigo[item.codigo] || 0;
     item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
   }
   saveVinhos(itensEstoque);
