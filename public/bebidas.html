@@ -90,10 +90,12 @@
     <button class="btn-inserir" id="btnEditar" onclick="toggleEdicao()" style="background:var(--blue)">✏️ Editar campos</button>
   </div>
 
-  <div class="subtabbar">
+  <div class="subtabbar" style="align-items:center">
     <button class="subtab active" id="btnVinhos" onclick="trocarView('lista')">Vinhos</button>
     <button class="subtab" disabled title="Em breve">Bebidas Alcoólicas</button>
     <button class="subtab" disabled title="Em breve">Não Alcoólicas</button>
+    <input type="text" id="busca" placeholder="🔍 Pesquisar vinho…" oninput="renderizar()"
+      style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;width:200px">
     <button class="subtab" id="btnAuditoria" onclick="trocarView('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
   </div>
 
@@ -179,7 +181,10 @@ function ordenarPor(campo) {
 }
 
 function renderizar() {
-  const itens = [...itensCache].sort((a,b) => {
+  const termoBusca = (document.getElementById('busca')?.value || '').trim().toLowerCase();
+  const filtrados = termoBusca ? itensCache.filter(it => it.nome.toLowerCase().includes(termoBusca)) : itensCache;
+
+  const itens = [...filtrados].sort((a,b) => {
     const r = String(a[ordemCampo]).localeCompare(String(b[ordemCampo]), 'pt-BR', {numeric:true});
     return ordemAsc ? r : -r;
   });
@@ -213,16 +218,18 @@ function renderizar() {
     <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
     <th class="num">Estoque Final</th><th class="num">Auditoria (31/07/2026)</th><th>Observação</th></tr>`;
 
-  document.getElementById('phSub').textContent = `${itens.length} vinhos cadastrados`;
-  document.getElementById('rQtd').textContent = itens.length;
-  document.getElementById('rInicial').textContent = N(itens.reduce((s,i)=>s+i.estoqueInicial,0));
-  document.getElementById('rVendas').textContent = N(itens.reduce((s,i)=>s+(i.vendas||0),0));
-  document.getElementById('rEntradas').textContent = N(itens.reduce((s,i)=>s+(i.entradas||0),0));
-  document.getElementById('rFinal').textContent = N(itens.reduce((s,i)=>s+i.estoqueFinal,0));
-  document.getElementById('rAuditados').textContent = itens.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
+  document.getElementById('phSub').textContent = termoBusca
+    ? `${itens.length} de ${itensCache.length} vinhos (filtrado por "${termoBusca}")`
+    : `${itens.length} vinhos cadastrados`;
+  document.getElementById('rQtd').textContent = itensCache.length;
+  document.getElementById('rInicial').textContent = N(itensCache.reduce((s,i)=>s+i.estoqueInicial,0));
+  document.getElementById('rVendas').textContent = N(itensCache.reduce((s,i)=>s+(i.vendas||0),0));
+  document.getElementById('rEntradas').textContent = N(itensCache.reduce((s,i)=>s+(i.entradas||0),0));
+  document.getElementById('rFinal').textContent = N(itensCache.reduce((s,i)=>s+i.estoqueFinal,0));
+  document.getElementById('rAuditados').textContent = itensCache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
   if (!itens.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">Nenhum vinho cadastrado.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${termoBusca ? 'Nenhum vinho encontrado para essa pesquisa.' : 'Nenhum vinho cadastrado.'}</td></tr>`;
     return;
   }
 
