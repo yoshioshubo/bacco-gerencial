@@ -1646,19 +1646,6 @@ app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
 
-// Lançamento cumulativo: soma ao valor já existente em vez de sobrescrever (botão "Inserir")
-app.post('/api/bebidas/vinhos/inserir-entrada', (req, res) => {
-  const { codigo, valor } = req.body;
-  const qtd = +valor;
-  if (!codigo || !qtd) return res.status(400).json({ error: 'codigo e valor (diferente de zero) são obrigatórios.' });
-  const itens = loadVinhos();
-  const item = itens.find(i => i.codigo === codigo);
-  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
-  item.entradas = +((item.entradas || 0) + qtd).toFixed(3);
-  saveVinhos(itens);
-  res.json({ ok: true, item: comEstoqueFinal(item) });
-});
-
 function mesAtualKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

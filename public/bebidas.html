@@ -40,8 +40,9 @@
   .subtab.active{background:var(--green);color:#fff;border-color:var(--green)}
   .subtab:disabled{opacity:.45;cursor:not-allowed}
 
-  .resumo{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1.25rem}
-  @media(max-width:700px){.resumo{grid-template-columns:repeat(2,1fr)}}
+  .resumo{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:1.25rem}
+  @media(max-width:900px){.resumo{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.resumo{grid-template-columns:repeat(2,1fr)}}
   .rcard{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:.9rem 1rem}
   .rcard .lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
   .rcard .val{font-size:22px;font-weight:500}
@@ -99,6 +100,8 @@
   <div class="resumo">
     <div class="rcard"><div class="lbl">Itens cadastrados</div><div class="val" id="rQtd">—</div></div>
     <div class="rcard"><div class="lbl">Estoque Inicial (total)</div><div class="val" id="rInicial">—</div></div>
+    <div class="rcard"><div class="lbl">Vendas (total)</div><div class="val negativo" id="rVendas">—</div></div>
+    <div class="rcard"><div class="lbl">Entradas (total)</div><div class="val" id="rEntradas">—</div></div>
     <div class="rcard"><div class="lbl">Estoque Final (total)</div><div class="val" id="rFinal">—</div></div>
     <div class="rcard" style="border-color:var(--green)"><div class="lbl">Auditados (31/07/2026)</div><div class="val" id="rAuditados" style="color:var(--green-dk)">—</div></div>
   </div>
@@ -203,6 +206,8 @@ function renderizar() {
   document.getElementById('phSub').textContent = `${itens.length} vinhos cadastrados`;
   document.getElementById('rQtd').textContent = itens.length;
   document.getElementById('rInicial').textContent = N(itens.reduce((s,i)=>s+i.estoqueInicial,0));
+  document.getElementById('rVendas').textContent = N(itens.reduce((s,i)=>s+(i.vendas||0),0));
+  document.getElementById('rEntradas').textContent = N(itens.reduce((s,i)=>s+(i.entradas||0),0));
   document.getElementById('rFinal').textContent = N(itens.reduce((s,i)=>s+i.estoqueFinal,0));
   document.getElementById('rAuditados').textContent = itens.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
@@ -229,6 +234,9 @@ function renderizar() {
     const obsCell = modoEdicao
       ? `<input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizar('${it.codigo}','observacao',this.value)">`
       : (it.observacao || '—');
+    const entradasCell = modoEdicao
+      ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizar('${it.codigo}','entradas',this.value)">`
+      : N(it.entradas ?? 0);
 
     return `<tr>
       <td class="mono">${it.codigo}</td>
@@ -236,15 +244,7 @@ function renderizar() {
       <td class="mono">${tamanhoCell}</td>
       <td class="num">${N(it.estoqueInicial)}</td>
       <td class="num">${vendasCell}</td>
-      <td class="num">
-        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-          <strong>${N(it.entradas)}</strong>
-          <div style="display:flex;gap:4px">
-            <input class="in" style="width:50px" type="number" step="any" placeholder="+qtd" id="add-${it.codigo}">
-            <button class="btn-inserir" onclick="inserirEntrada('${it.codigo}')">Inserir</button>
-          </div>
-        </div>
-      </td>
+      <td class="num">${entradasCell}</td>
       <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
       <td class="num">${auditoriaCell}</td>
       <td>${obsCell}</td>
@@ -262,22 +262,6 @@ async function atualizar(codigo, campo, valor) {
     const idx = itensCache.findIndex(i => i.codigo === codigo);
     if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
     if (viewAtual === 'auditoria') carregar(); else renderizar();
-  }
-}
-
-async function inserirEntrada(codigo) {
-  const input = document.getElementById(`add-${codigo}`);
-  const valor = input.value;
-  if (!valor || +valor === 0) return;
-  const r = await fetch('/api/bebidas/vinhos/inserir-entrada', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ codigo, valor })
-  });
-  const d = await r.json();
-  if (d.item) {
-    const idx = itensCache.findIndex(i => i.codigo === codigo);
-    if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
-    renderizar();
   }
 }
 
