@@ -799,19 +799,15 @@ function buildMesData(vendaPdf, ocupPdf, vendas, ocupacao, eventosmesRaw, mes, c
   const eventosBanq     = eventosmes?.banq  || 0;
   const receitaEventos  = eventosBanq;
 
-  // CAEd no Dashboard conta apenas do dia 1 até a última data do período do relatório
-  // (mesma data-corte exibida no cabeçalho, ex: "01/07/2026 a 07/07/2026 · 7 dias")
+  // CAEd no Dashboard conta do dia 1 até a data de hoje (independente do PDF de vendas,
+  // já que o CAEd vem de uma planilha própria no Drive)
   let clientesCaed = 0, receitaCaed = 0;
   if (caedMes?.daily) {
-    let dataCorte = null;
-    if (allDates.length) {
-      const [dd, mm, yyyy] = allDates[allDates.length - 1].split('/');
-      dataCorte = new Date(+yyyy, +mm - 1, +dd);
-    }
+    const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     for (const [dataStr, v] of Object.entries(caedMes.daily)) {
       const [dd, mm, yyyy] = dataStr.split('/');
       const dataAtual = new Date(+yyyy, +mm - 1, +dd);
-      if (dataCorte && dataAtual > dataCorte) continue;
+      if (dataAtual > hoje) continue;
       clientesCaed += v.pessoas;
       receitaCaed  += v.faturamento;
     }
