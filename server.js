@@ -140,10 +140,57 @@ const ENTRADAS_INICIAIS_MIGRACAO = [
   { id: 'entrada-N005-200244-2026-07', codigo: 'N005',  delta: 3 } // Tantehue Carmenère já cadastrado
 ];
 
+// Categoria inferida pelo nome/uva de cada rótulo (pesquisada onde disponível).
+// Deixado em branco quando não há certeza — ajuste manual necessário.
+const CATEGORIA_POR_CODIGO = {
+  '100051': 'Tinto',        // Cabernet
+  '000415': 'Espumante',
+  '001198': 'Espumante',
+  '1920':   'Espumante',
+  '001202': 'Branco',
+  '001203': 'Rosé',
+  '000935': 'Tinto',        // Malbec
+  '001199': 'Branco',       // Pinot Grigio
+  '001208': 'Branco',       // Chardonnay
+  '001204': '',             // Azul Ventozelo — não confirmado
+  '000934': 'Rosé',
+  '001200': 'Tinto',        // Primitivo
+  '001214': 'Rosé',
+  '001213': 'Branco',
+  '001201': 'Tinto',        // Montepulciano
+  '45645':  'Tinto',        // Cabernet Franc
+  '20026':  '',             // EA Fundação Eugénio de Almeida — não confirmado
+  '000701': 'Branco',
+  '000700': 'Tinto',
+  '001211': 'Tinto',        // Cabernet Sauvignon
+  '001212': 'Tinto',        // Malbec
+  '001210': 'Tinto',
+  '000423': 'Branco',       // Chardonnay
+  '001209': 'Tinto',        // Tannat
+  '20081':  'Tinto',
+  '001216': 'Tinto',
+  '000941': 'Branco',       // White Blend
+  'N001':   'Tinto',        // Montepulciano d'Abruzzo
+  'N002':   'Tinto',        // Primitivo
+  'N003':   'Tinto',        // Chianti
+  'N004':   'Tinto',
+  'N005':   'Tinto',        // Carménère
+  'N006':   'Tinto',        // Cabernet Sauvignon
+  'N007':   'Tinto',        // Alicante Bouschet
+  'N008':   'Tinto',        // Aragonez
+  'N009':   'Tinto',        // Trincadeira
+  '06020043': 'Tinto',
+  '06020045': 'Tinto',
+  'VCC0003':  'Tinto',      // Cabernet Sauvignon
+  '14004':    'Tinto',      // Merlot
+  'WC0109':   'Tinto'       // Malbec
+};
+const ORDEM_CATEGORIAS = ['Espumante', 'Branco', 'Rosé', 'Tinto'];
+
 function seedItensDe(lista) {
   return lista.map(([codigo, nomeRaw, unidade, estoqueInicial]) => {
     const { nome, tamanho } = extraiTamanhoENome(nomeRaw, unidade);
-    return { codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' };
+    return { codigo, nome, tamanho, categoria: CATEGORIA_POR_CODIGO[codigo] || '', estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' };
   });
 }
 function seedVinhos() { return seedItensDe(SEED_VINHOS_RAW); }
@@ -157,6 +204,12 @@ function loadVinhos() {
   let mudou = !existeArquivo;
   for (const novo of seedItensDe(NOVOS_VINHOS_RAW)) {
     if (!codigosExistentes.has(novo.codigo)) { itens.push(novo); mudou = true; }
+  }
+
+  // Preenche a categoria uma única vez para itens que ainda não têm esse campo
+  // (não sobrescreve se o usuário já editou manualmente, mesmo que tenha deixado em branco)
+  for (const item of itens) {
+    if (item.categoria === undefined) { item.categoria = CATEGORIA_POR_CODIGO[item.codigo] || ''; mudou = true; }
   }
 
   // Aplica lançamentos de entrada iniciais uma única vez
@@ -1651,11 +1704,11 @@ app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
   res.json({ itens });
 });
 
-const CAMPOS_TEXTO_VINHO = ['observacao', 'nome', 'tamanho'];
+const CAMPOS_TEXTO_VINHO = ['observacao', 'nome', 'tamanho', 'categoria'];
 app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
   if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_VINHO].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho) são obrigatórios.' });
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho|categoria) são obrigatórios.' });
   }
   const itens = loadVinhos();
   const item = itens.find(i => i.codigo === codigo);

@@ -214,7 +214,7 @@ function renderizar() {
   }
 
   thead.innerHTML = `<tr>
-    <th>Código</th><th onclick="ordenarPor('nome')">Vinho ↕</th><th>Tamanho</th>
+    <th>Código</th><th>Categoria</th><th onclick="ordenarPor('nome')">Vinho ↕</th><th>Tamanho</th>
     <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
     <th class="num">Estoque Final</th><th class="num">Auditoria (31/07/2026)</th><th>Observação</th></tr>`;
 
@@ -229,13 +229,30 @@ function renderizar() {
   document.getElementById('rAuditados').textContent = itensCache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
   if (!itens.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${termoBusca ? 'Nenhum vinho encontrado para essa pesquisa.' : 'Nenhum vinho cadastrado.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${termoBusca ? 'Nenhum vinho encontrado para essa pesquisa.' : 'Nenhum vinho cadastrado.'}</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = itens.map(it => {
+  const ORDEM_CATEGORIAS = ['Espumante', 'Branco', 'Rosé', 'Tinto', ''];
+  const LABEL_CATEGORIA = { Espumante: 'Espumantes', Branco: 'Vinhos Brancos', 'Rosé': 'Vinhos Rosé', Tinto: 'Vinhos Tintos', '': 'Sem Categoria' };
+  const OPCOES_CATEGORIA = ['', 'Espumante', 'Branco', 'Rosé', 'Tinto'];
+
+  let html = '';
+  for (const cat of ORDEM_CATEGORIAS) {
+    const doGrupo = itens.filter(it => (it.categoria || '') === cat);
+    if (!doGrupo.length) continue;
+    html += `<tr><td colspan="10" style="background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${LABEL_CATEGORIA[cat]} (${doGrupo.length})</td></tr>`;
+    html += doGrupo.map(it => linhaVinho(it, OPCOES_CATEGORIA)).join('');
+  }
+  tbody.innerHTML = html;
+}
+
+function linhaVinho(it, OPCOES_CATEGORIA) {
     const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
 
+    const categoriaCell = modoEdicao
+      ? `<select class="in" style="width:110px" onchange="atualizar('${it.codigo}','categoria',this.value)">${OPCOES_CATEGORIA.map(c => `<option value="${c}" ${c===(it.categoria||'')?'selected':''}>${c || '—'}</option>`).join('')}</select>`
+      : (it.categoria || '—');
     const nomeCell = modoEdicao
       ? `<input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizar('${it.codigo}','nome',this.value)">`
       : it.nome;
@@ -257,6 +274,7 @@ function renderizar() {
 
     return `<tr>
       <td class="mono">${it.codigo}</td>
+      <td>${categoriaCell}</td>
       <td>${nomeCell}</td>
       <td class="mono">${tamanhoCell}</td>
       <td class="num">${N(it.estoqueInicial)}</td>
@@ -266,7 +284,6 @@ function renderizar() {
       <td class="num">${auditoriaCell}</td>
       <td>${obsCell}</td>
     </tr>`;
-  }).join('');
 }
 
 async function atualizar(codigo, campo, valor) {
