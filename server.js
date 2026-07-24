@@ -1,4 +1,5 @@
 process.env.TZ = 'America/Sao_Paulo';
+// build-marker: forca novo deploy no Railway
 try { require('dotenv').config(); } catch(_) {}
 const express  = require('express');
 const fs       = require('fs');
