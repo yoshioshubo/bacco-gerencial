@@ -1697,6 +1697,33 @@ app.get('/api/bebidas/vinhos', (req, res) => {
   res.json({ itens, tacaTinto, tacaBranco });
 });
 
+app.post('/api/bebidas/vinhos/novo', (req, res) => {
+  const { codigo, nome, tamanho, categoria, estoqueInicial } = req.body;
+  const codigoLimpo = String(codigo || '').trim();
+  const nomeLimpo = String(nome || '').trim();
+  if (!codigoLimpo || !nomeLimpo) return res.status(400).json({ error: 'Código e nome são obrigatórios.' });
+
+  const itens = loadVinhos();
+  if (itens.some(i => i.codigo === codigoLimpo)) {
+    return res.status(409).json({ error: `Já existe um vinho cadastrado com o código ${codigoLimpo}.` });
+  }
+
+  const novo = {
+    codigo: codigoLimpo,
+    nome: nomeLimpo.toLowerCase(),
+    tamanho: String(tamanho || 'UN').trim(),
+    categoria: String(categoria || ''),
+    estoqueInicial: +estoqueInicial || 0,
+    vendas: 0,
+    entradas: 0,
+    auditoria: null,
+    observacao: ''
+  };
+  itens.push(novo);
+  saveVinhos(itens);
+  res.json({ ok: true, item: comEstoqueFinal(novo) });
+});
+
 app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
   const itens = loadVinhos().map(comEstoqueFinal)
     .filter(it => it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal)

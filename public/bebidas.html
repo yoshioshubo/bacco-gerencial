@@ -87,7 +87,44 @@
       <h1>Controle de Bebidas</h1>
       <p id="phSub">Carregando…</p>
     </div>
-    <button class="btn-inserir" id="btnEditar" onclick="toggleEdicao()" style="background:var(--blue)">✏️ Editar campos</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn-inserir" onclick="abrirFormNovoVinho()">+ Novo Vinho</button>
+      <button class="btn-inserir" id="btnEditar" onclick="toggleEdicao()" style="background:var(--blue)">✏️ Editar campos</button>
+    </div>
+  </div>
+
+  <div class="tcard" id="formNovoVinho" style="display:none;margin-bottom:1.25rem;padding:1rem 1.25rem">
+    <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr auto auto;gap:8px;align-items:end">
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Código</label>
+        <input class="in" style="width:100%" type="text" id="novoCodigo">
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome</label>
+        <input class="in" style="width:100%;text-align:left" type="text" id="novoNome" placeholder="Ex: Rótulo XYZ">
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Tamanho</label>
+        <input class="in" style="width:100%" type="text" id="novoTamanho" placeholder="750ml">
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Categoria</label>
+        <select class="in" style="width:100%" id="novoCategoria">
+          <option value="">—</option>
+          <option value="Espumante">Espumante</option>
+          <option value="Branco">Branco</option>
+          <option value="Rosé">Rosé</option>
+          <option value="Tinto">Tinto</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Estoque Inicial</label>
+        <input class="in" style="width:100%" type="number" step="any" id="novoEstoque" value="0">
+      </div>
+      <button class="btn-inserir" onclick="salvarNovoVinho()">Salvar</button>
+      <button class="btn-inserir" style="background:var(--muted)" onclick="fecharFormNovoVinho()">Cancelar</button>
+    </div>
+    <div id="novoVinhoErro" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
   </div>
 
   <div class="subtabbar" style="align-items:center">
@@ -146,6 +183,48 @@ function toggleEdicao() {
   const btn = document.getElementById('btnEditar');
   btn.textContent = modoEdicao ? '✓ Concluir edição' : '✏️ Editar campos';
   btn.style.background = modoEdicao ? 'var(--green)' : 'var(--blue)';
+  renderizar();
+}
+
+function abrirFormNovoVinho() {
+  document.getElementById('formNovoVinho').style.display = '';
+  document.getElementById('novoVinhoErro').style.display = 'none';
+  document.getElementById('novoCodigo').focus();
+}
+
+function fecharFormNovoVinho() {
+  document.getElementById('formNovoVinho').style.display = 'none';
+  ['novoCodigo','novoNome','novoTamanho'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('novoCategoria').value = '';
+  document.getElementById('novoEstoque').value = 0;
+}
+
+async function salvarNovoVinho() {
+  const codigo = document.getElementById('novoCodigo').value.trim();
+  const nome = document.getElementById('novoNome').value.trim();
+  const tamanho = document.getElementById('novoTamanho').value.trim() || 'UN';
+  const categoria = document.getElementById('novoCategoria').value;
+  const estoqueInicial = document.getElementById('novoEstoque').value || 0;
+
+  const erroEl = document.getElementById('novoVinhoErro');
+  if (!codigo || !nome) {
+    erroEl.textContent = 'Preencha ao menos o código e o nome do vinho.';
+    erroEl.style.display = '';
+    return;
+  }
+
+  const r = await fetch('/api/bebidas/vinhos/novo', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, nome, tamanho, categoria, estoqueInicial })
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    erroEl.textContent = d.error || 'Erro ao salvar.';
+    erroEl.style.display = '';
+    return;
+  }
+  itensCache.push(d.item);
+  fecharFormNovoVinho();
   renderizar();
 }
 
