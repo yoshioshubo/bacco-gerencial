@@ -128,7 +128,16 @@ const NOVOS_VINHOS_RAW = [
   ['06020045', 'por bons ventos tto 750ml', 'UN', 0],
   ['VCC0003', 'arg cordero con piel de lobo cabernet sauvignon 750ml', 'UN', 0],
   ['14004', 'chi tarapaca reserva merlot 750ml', 'UN', 0],
-  ['WC0109', 'arg cordero con piel de lobo malbec 750ml', 'UN', 0]
+  ['WC0109', 'arg cordero con piel de lobo malbec 750ml', 'UN', 0],
+  // Vinhos encontrados na Contagem_Consolidada_Vinhos 28_07_2026.pdf que ainda não constavam na base
+  ['G101', 'garibaldi primicias brut 660 ml', 'UN', 0],
+  ['G102', 'garibaldi vero rose brut', 'UN', 0],
+  ['G103', 'garibaldi vero pinot noir rose brut', 'UN', 0],
+  ['G104', 'aresti reserva cabina 56 sauvignon blanc', 'UN', 0],
+  ['G105', 'folha do meio rose', 'UN', 0],
+  ['G106', 'anubis reserva malbec', 'UN', 0],
+  ['G107', 'bons ventos magnum 1,5l', 'UN', 0],
+  ['G108', 'ea cartuxa tinto 375 ml', 'UN', 0]
 ];
 
 // Lançamentos de entrada iniciais que só podem ser aplicados uma vez (marca em BEBIDAS_MIGRACOES_FILE)
@@ -184,7 +193,15 @@ const CATEGORIA_POR_CODIGO = {
   '06020045': 'Tinto',
   'VCC0003':  'Tinto',      // Cabernet Sauvignon
   '14004':    'Tinto',      // Merlot
-  'WC0109':   'Tinto'       // Malbec
+  'WC0109':   'Tinto',      // Malbec
+  'G101': 'Espumante', // Garibaldi Primícias Brut
+  'G102': 'Espumante', // Garibaldi Vero Rosé Brut
+  'G103': 'Espumante', // Garibaldi Vero Pinot Noir Rosé Brut
+  'G104': 'Branco',    // Aresti Reserva Cabina 56 Sauvignon Blanc
+  'G105': 'Rosé',      // Folha do Meio Rosé
+  'G106': 'Tinto',     // Anubis Reserva Malbec
+  'G107': 'Tinto',     // Bons Ventos Magnum 1,5L
+  'G108': 'Tinto'      // EA Cartuxa Tinto 375ml
 };
 const ORDEM_CATEGORIAS = ['Espumante', 'Branco', 'Rosé', 'Tinto'];
 
