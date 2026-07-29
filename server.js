@@ -1643,6 +1643,31 @@ function extrairItensVinho(texto) {
   return itens;
 }
 
+app.get('/api/debug-apurar-vinhos', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const mesAtual = mesAtualKey();
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === mesAtual);
+    if (!arquivosDoMes.length) return res.json({ mesAtual, erro: 'Nenhum PDF de vendas encontrado para o mês corrente.' });
+    // usa o mesmo critério do sincronizar(): o mais recentemente modificado
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+
+    const antes = loadVinhos().map(it => ({ codigo: it.codigo, nome: it.nome, vendas: it.vendas }));
+    apurarVendasVinhosDoMes(texto);
+    const depois = loadVinhos().map(it => ({ codigo: it.codigo, nome: it.nome, vendas: it.vendas }));
+    const tacas = loadTacas();
+
+    res.json({ arquivo: arquivo.name, mesAtual, ok: true, tacas, antes, depois });
+  } catch(e) {
+    res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
+  }
+});
+
 app.get('/api/debug-vinhos', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
