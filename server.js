@@ -150,6 +150,52 @@ const ENTRADAS_INICIAIS_MIGRACAO = [
   { id: 'entrada-N005-200244-2026-07', codigo: 'N005',  delta: 3 } // Tantehue Carmenère já cadastrado
 ];
 
+// Contagem física de 28/07/2026 (Contagem_Consolidada_Vinhos.pdf) — aplicada uma única vez no
+// campo Auditoria; o usuário pode sobrescrever livremente depois com a contagem real do dia 31
+const AUDITORIA_28_07_2026 = [
+  { codigo: '000415', valor: 3 },   // Casa Geraldo Glera Brut
+  { codigo: '001198', valor: 1 },   // Alud Branco
+  { codigo: '1920',   valor: 3 },   // Chandon Brut
+  { codigo: '000941', valor: 3 },   // Casa Geraldo White Blend 3 Tons
+  { codigo: '001208', valor: 3 },   // Aresti Estate Select Chardonnay
+  { codigo: '000701', valor: 5 },   // Folha do Meio Colheita (branco)
+  { codigo: '001199', valor: 1 },   // Arcaia Pinot Grigio
+  { codigo: '001213', valor: 3 },   // Cavas de Oro Blend Branco
+  { codigo: '000423', valor: 8 },   // Luiz Porto Chardonnay
+  { codigo: '001203', valor: 2 },   // Adele (rosé)
+  { codigo: '001214', valor: 2 },   // Cavas de Oro Blend (rosé)
+  { codigo: '001210', valor: 3 },   // Los Aljibes (VA) Tempranillo
+  { codigo: '001209', valor: 2 },   // Spinoglio Tierra Alta Tannat
+  { codigo: '001201', valor: 0 },   // Corsarini Montepulciano d'Abruzzo
+  { codigo: '001200', valor: 0 },   // Burdizzo Primitivo
+  { codigo: '000935', valor: 3 },   // Anubis Malbec
+  { codigo: 'WC0109', valor: 0 },   // Cordero con Piel de Lobo Malbec
+  { codigo: 'VCC0003',valor: 3 },   // Cordero con Piel de Lobo Cabernet Sauvignon
+  { codigo: '000700', valor: 2 },   // Folha do Meio Colheita (tinto)
+  { codigo: '06020043', valor: 0 },// Bons Ventos 375ml
+  { codigo: '06020045', valor: 4 },// Bons Ventos
+  { codigo: 'N004',   valor: 3 },  // EA Tinto
+  { codigo: 'N007',   valor: 2 },  // EA Alicante Bouschet
+  { codigo: 'N008',   valor: 2 },  // EA Aragonez
+  { codigo: 'N009',   valor: 1 },  // EA Trincadeira
+  { codigo: 'N006',   valor: 2 },  // Santa Helena Cabernet Sauvignon 375ml
+  { codigo: 'N005',   valor: 0 },  // Tantahue Carmenere
+  { codigo: 'N001',   valor: 3 },  // Caleo Montepulciano d'Abruzzo
+  { codigo: 'N002',   valor: 2 },  // Codici Primitivo Puglia
+  { codigo: 'N003',   valor: 2 },  // Le Cascine Chianti
+  { codigo: '14004',  valor: 2 },  // Tarapacá
+  { codigo: '001204', valor: 2 },  // Azul de Ventos 375ml (casado com Azul Ventozelo — confira)
+  { codigo: '001216', valor: 1 },  // Villa Rosa
+  { codigo: 'G101', valor: 10 },   // Garibaldi Primícias Brut
+  { codigo: 'G102', valor: 4 },    // Garibaldi Vero Rosé Brut
+  { codigo: 'G103', valor: 5 },    // Garibaldi Vero Pinot Noir Rosé Brut
+  { codigo: 'G104', valor: 2 },    // Aresti Reserva Cabina 56 Sauvignon Blanc
+  { codigo: 'G105', valor: 1 },    // Folha do Meio (rosé)
+  { codigo: 'G106', valor: 0 },    // Anubis Reserva Malbec
+  { codigo: 'G107', valor: 4 },    // Bons Ventos Magnum 1,5L
+  { codigo: 'G108', valor: 0 }     // EA Cartuxa Tinto 375ml
+];
+
 // Categoria inferida pelo nome/uva de cada rótulo (pesquisada onde disponível).
 // Deixado em branco quando não há certeza — ajuste manual necessário.
 const CATEGORIA_POR_CODIGO = {
@@ -240,6 +286,17 @@ function loadVinhos() {
     const item = itens.find(i => i.codigo === m.codigo);
     if (item) { item.entradas = +((item.entradas || 0) + m.delta).toFixed(3); mudou = true; }
     migracoes.aplicadas.push(m.id);
+    migracoesMudaram = true;
+  }
+
+  // Aplica a contagem física de 28/07/2026 no campo Auditoria — só uma vez (o usuário pode
+  // sobrescrever livremente depois com a contagem do dia 31)
+  for (const a of AUDITORIA_28_07_2026) {
+    const id = `auditoria-28-07-2026-${a.codigo}`;
+    if (migracoes.aplicadas.includes(id)) continue;
+    const item = itens.find(i => i.codigo === a.codigo);
+    if (item) { item.auditoria = a.valor; mudou = true; }
+    migracoes.aplicadas.push(id);
     migracoesMudaram = true;
   }
   if (migracoesMudaram) fs.writeFileSync(BEBIDAS_MIGRACOES_FILE, JSON.stringify(migracoes, null, 2));
