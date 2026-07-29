@@ -1158,24 +1158,28 @@ app.get('/api/concessionarias', async (req, res) => {
 
     const arquivos = await listaArquivosConsumo('GASMIG');
     if (!arquivos.length) return res.json({ tipo, periodos: [], aviso: 'Nenhum PDF da GASMIG encontrado na pasta.' });
-    const arquivo = arquivos[0];
 
     const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 
-    // Baixa todas as faturas para pegar o "Total a pagar" de cada uma (a tabela HISTÓRICO da última fatura só tem consumo, sem valor em R$)
+    // Baixa TODAS as faturas — cada uma traz o próprio período atual + até 12 meses de histórico.
+    // Junta tudo (sem duplicar), já que faturas mais antigas alcançam meses que a mais recente não cobre.
     const valoresPorPeriodo = {};
+    const periodosPorLabel = {};
     for (const f of arquivos) {
       try {
         const bufF = await downloadFile(f.id);
         const textoF = await pdfParse(bufF).then(r => r.text);
-        const pF = parseGasmigTexto(textoF)[0]; // período atual dessa fatura específica
+        const periodosArquivo = parseGasmigTexto(textoF);
+        const pF = periodosArquivo[0]; // período atual dessa fatura específica
         if (pF && pF.totalPagar !== null) valoresPorPeriodo[`${fmt(pF.inicio)} a ${fmt(pF.fim)}`] = pF.totalPagar;
+        for (const p of periodosArquivo) {
+          const label = `${fmt(p.inicio)} a ${fmt(p.fim)}`;
+          if (!periodosPorLabel[label]) periodosPorLabel[label] = p;
+        }
       } catch(e) { console.warn('[GASMIG]', f.name, e.message); }
     }
 
-    const buf = await downloadFile(arquivo.id);
-    const parsedPdf = await pdfParse(buf);
-    const periodosBrutos = parseGasmigTexto(parsedPdf.text);
+    const periodosBrutos = Object.values(periodosPorLabel).sort((a, b) => b.inicio - a.inicio);
 
     const store = fs.existsSync(RESULT_FILE) ? JSON.parse(fs.readFileSync(RESULT_FILE, 'utf8')) : { dados: {} };
 
@@ -1192,7 +1196,7 @@ app.get('/api/concessionarias', async (req, res) => {
       };
     });
 
-    res.json({ tipo, arquivo: arquivo.name, periodos });
+    res.json({ tipo, arquivo: arquivos.map(a => a.name).join(', '), periodos });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
