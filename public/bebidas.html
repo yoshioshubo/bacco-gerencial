@@ -187,7 +187,7 @@
     </div>
 
     <div class="tcard" id="formNovoAlc" style="display:none;margin-bottom:1.25rem;padding:1rem 1.25rem">
-      <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr auto auto;gap:8px;align-items:end">
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr auto auto;gap:8px;align-items:end">
         <div>
           <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Código</label>
           <input class="in" style="width:100%" type="text" id="novoCodigoAlc">
@@ -199,6 +199,15 @@
         <div>
           <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Tamanho</label>
           <input class="in" style="width:100%" type="text" id="novoTamanhoAlc" placeholder="Lata / Dose / 750ml">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Grupo</label>
+          <select class="in" style="width:100%" id="novoGrupoAlc">
+            <option value="">—</option>
+            <option value="Cerveja">Cerveja</option>
+            <option value="Drinks">Drinks</option>
+            <option value="Destilados">Destilados</option>
+          </select>
         </div>
         <div>
           <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Estoque Inicial</label>
@@ -488,6 +497,7 @@ function abrirFormNovoAlc() {
 function fecharFormNovoAlc() {
   document.getElementById('formNovoAlc').style.display = 'none';
   ['novoCodigoAlc','novoNomeAlc','novoTamanhoAlc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('novoGrupoAlc').value = '';
   document.getElementById('novoEstoqueAlc').value = 0;
 }
 
@@ -495,6 +505,7 @@ async function salvarNovoAlc() {
   const codigo = document.getElementById('novoCodigoAlc').value.trim();
   const nome = document.getElementById('novoNomeAlc').value.trim();
   const tamanho = document.getElementById('novoTamanhoAlc').value.trim() || 'UN';
+  const grupo = document.getElementById('novoGrupoAlc').value;
   const estoqueInicial = document.getElementById('novoEstoqueAlc').value || 0;
 
   const erroEl = document.getElementById('novoAlcErro');
@@ -506,7 +517,7 @@ async function salvarNovoAlc() {
 
   const r = await fetch('/api/bebidas/alcoolicas/novo', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ codigo, nome, tamanho, estoqueInicial })
+    body: JSON.stringify({ codigo, nome, tamanho, grupo, estoqueInicial })
   });
   const d = await r.json();
   if (!r.ok) {
@@ -578,7 +589,7 @@ function renderizarAlc() {
   }
 
   thead.innerHTML = `<tr>
-    <th>Código</th><th onclick="ordenarPorAlc('nome')">Item ↕</th><th>Tamanho</th>
+    <th>Código</th><th>Grupo</th><th onclick="ordenarPorAlc('nome')">Item ↕</th><th>Tamanho</th>
     <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
     <th class="num">Estoque Final</th><th class="num">Auditoria</th><th>Observação</th></tr>`;
 
@@ -593,16 +604,30 @@ function renderizarAlc() {
   document.getElementById('rAuditadosAlc').textContent = itensAlcCache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
   if (!itens.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.'}</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = itens.map(it => linhaAlc(it)).join('');
+  const ORDEM_GRUPOS = ['Cerveja', 'Drinks', 'Destilados', ''];
+  const LABEL_GRUPO = { Cerveja: 'Cervejas', Drinks: 'Drinks', Destilados: 'Destilados', '': 'Sem Grupo' };
+  const OPCOES_GRUPO = ['', 'Cerveja', 'Drinks', 'Destilados'];
+
+  let html = '';
+  for (const g of ORDEM_GRUPOS) {
+    const doGrupo = itens.filter(it => (it.grupo || '') === g);
+    if (!doGrupo.length) continue;
+    html += `<tr><td colspan="10" style="background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${LABEL_GRUPO[g]} (${doGrupo.length})</td></tr>`;
+    html += doGrupo.map(it => linhaAlc(it, OPCOES_GRUPO)).join('');
+  }
+  tbody.innerHTML = html;
 }
 
-function linhaAlc(it) {
+function linhaAlc(it, OPCOES_GRUPO) {
   const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
 
+  const grupoCell = modoEdicaoAlc
+    ? `<select class="in" style="width:90px" onchange="atualizarAlc('${it.codigo}','grupo',this.value)">${OPCOES_GRUPO.map(g => `<option value="${g}" ${g===(it.grupo||'')?'selected':''}>${g || '—'}</option>`).join('')}</select>`
+    : (it.grupo || '—');
   const nomeCell = modoEdicaoAlc
     ? `<input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizarAlc('${it.codigo}','nome',this.value)">`
     : it.nome;
@@ -624,6 +649,7 @@ function linhaAlc(it) {
 
   return `<tr>
     <td class="mono">${it.codigo}</td>
+    <td>${grupoCell}</td>
     <td>${nomeCell}</td>
     <td class="mono">${tamanhoCell}</td>
     <td class="num">${N(it.estoqueInicial)}</td>

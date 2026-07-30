@@ -138,7 +138,9 @@ const NOVOS_VINHOS_RAW = [
   ['G105', 'folha do meio rose', 'UN', 0],
   ['G106', 'anubis reserva malbec', 'UN', 0],
   ['G107', 'bons ventos magnum 1,5l', 'UN', 0],
-  ['G108', 'ea cartuxa tinto 375 ml', 'UN', 0]
+  ['G108', 'ea cartuxa tinto 375 ml', 'UN', 0],
+  // Encontrado cadastrado por engano em Bebidas Alcoólicas — é vinho, movido para cá
+  ['N010', 'luiz porto cabernet sauvignon 750ml', 'UN', 0]
 ];
 
 // Lançamentos de entrada iniciais que só podem ser aplicados uma vez (marca em BEBIDAS_MIGRACOES_FILE)
@@ -248,7 +250,8 @@ const CATEGORIA_POR_CODIGO = {
   'G105': 'Rosé',      // Folha do Meio Rosé
   'G106': 'Tinto',     // Anubis Reserva Malbec
   'G107': 'Tinto',     // Bons Ventos Magnum 1,5L
-  'G108': 'Tinto'      // EA Cartuxa Tinto 375ml
+  'G108': 'Tinto',     // EA Cartuxa Tinto 375ml
+  'N010': 'Tinto'      // Luiz Porto Cabernet Sauvignon
 };
 const ORDEM_CATEGORIAS = ['Espumante', 'Branco', 'Rosé', 'Tinto'];
 
@@ -322,7 +325,6 @@ const SEED_BEBIDAS_ALC_RAW = [
   ['BA008', 'Cachaça Dom Bre', 'Dose', 0],
   ['BA009', 'Cointreau', 'Dose', 0],
   ['BA010', 'Tropical', 'Dose', 0],
-  ['BA011', 'Bons Ventos Tinto', '750ml', 0],
   ['BA012', 'Cerveja Corona', 'Lata', 0],
   ['BA013', 'Cerveja Corona', 'Long Neck', 0],
   ['BA014', 'Cerveja Stella', 'Lata', 0],
@@ -337,23 +339,59 @@ const SEED_BEBIDAS_ALC_RAW = [
   ['BA023', 'Jack Daniels Gentleman', 'Dose', 0],
   ['BA024', 'Jack Daniels Honey', 'Dose', 0],
   ['BA025', 'Limoncello Spritz', 'Dose', 0],
-  ['BA026', 'Luiz Porto Cabernet Sauvignon', '750ml', 0],
-  ['BA027', 'Luiz Porto Chardonnay', '750ml', 0],
   ['BA028', 'Stella Pure Gold', 'Long Neck', 0],
   ['BA029', 'Tequila Ouro', 'Dose', 0],
   ['BA030', 'Tequila Prata', 'Dose', 0],
   ['BA031', 'Caipirinha', 'Dose', 0]
 ];
 
+// Grupo de exibição de cada item (Cerveja / Drinks / Destilados)
+const GRUPO_POR_CODIGO_ALC = {
+  BA001: 'Drinks', BA002: 'Destilados', BA003: 'Drinks', BA004: 'Drinks', BA005: 'Drinks',
+  BA006: 'Destilados', BA007: 'Destilados', BA008: 'Destilados', BA009: 'Destilados', BA010: 'Drinks',
+  BA012: 'Cerveja', BA013: 'Cerveja', BA014: 'Cerveja', BA015: 'Cerveja', BA016: 'Cerveja',
+  BA017: 'Drinks', BA018: 'Destilados', BA019: 'Destilados', BA020: 'Cerveja', BA021: 'Cerveja',
+  BA022: 'Destilados', BA023: 'Destilados', BA024: 'Destilados', BA025: 'Drinks',
+  BA028: 'Cerveja', BA029: 'Destilados', BA030: 'Destilados', BA031: 'Drinks'
+};
+const ORDEM_GRUPOS_ALC = ['Cerveja', 'Drinks', 'Destilados'];
+
+// Códigos removidos do catálogo (itens que na verdade são vinhos e já constam na aba Vinhos) —
+// aplicado uma única vez via BEBIDAS_MIGRACOES_FILE para não recriar o item se o usuário editou.
+const REMOVIDOS_BEBIDAS_ALC = ['BA011', 'BA026', 'BA027'];
+
 function seedItensBebidasAlc(lista) {
   return lista.map(([codigo, nome, tamanho, estoqueInicial]) =>
-    ({ codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' }));
+    ({ codigo, nome, tamanho, grupo: GRUPO_POR_CODIGO_ALC[codigo] || '', estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' }));
 }
 
 function loadBebidasAlc() {
   const existeArquivo = fs.existsSync(BEBIDAS_ALC_FILE);
-  const itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_ALC_FILE, 'utf8')) : seedItensBebidasAlc(SEED_BEBIDAS_ALC_RAW);
-  if (!existeArquivo) fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2));
+  let itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_ALC_FILE, 'utf8')) : seedItensBebidasAlc(SEED_BEBIDAS_ALC_RAW);
+  let mudou = !existeArquivo;
+
+  // Preenche o grupo uma única vez para itens que ainda não têm esse campo
+  for (const item of itens) {
+    if (item.grupo === undefined) { item.grupo = GRUPO_POR_CODIGO_ALC[item.codigo] || ''; mudou = true; }
+  }
+
+  // Remove uma única vez itens que foram identificados como vinhos e cadastrados no lugar errado
+  const migracoes = fs.existsSync(BEBIDAS_MIGRACOES_FILE)
+    ? JSON.parse(fs.readFileSync(BEBIDAS_MIGRACOES_FILE, 'utf8'))
+    : { aplicadas: [] };
+  let migracoesMudaram = false;
+  for (const codigo of REMOVIDOS_BEBIDAS_ALC) {
+    const id = `remover-alc-${codigo}`;
+    if (migracoes.aplicadas.includes(id)) continue;
+    const antes = itens.length;
+    itens = itens.filter(i => i.codigo !== codigo);
+    if (itens.length !== antes) mudou = true;
+    migracoes.aplicadas.push(id);
+    migracoesMudaram = true;
+  }
+  if (migracoesMudaram) fs.writeFileSync(BEBIDAS_MIGRACOES_FILE, JSON.stringify(migracoes, null, 2));
+
+  if (mudou) fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2));
   return itens;
 }
 function saveBebidasAlc(itens) { fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2)); }
@@ -1631,7 +1669,7 @@ function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
       const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
       if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
     });
-    if (melhorIdx === -1) continue;
+    if (melhorIdx === -1 || (melhorScore < 2 && melhorScore < palavrasPdv.size)) continue;
     const codigo = itensEstoque[melhorIdx].codigo;
     porCodigo[codigo] = (porCodigo[codigo] || 0) + it.qtd;
   }
@@ -1662,7 +1700,10 @@ function apurarVendasVinhosDoMes(texto) {
       const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
       if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
     });
-    if (melhorIdx === -1) continue; // nenhuma correspondência — não atribui a ninguém
+    // Exige ao menos 2 palavras em comum (ou 100% das palavras do item, se ele só tiver 1) para
+    // evitar falso-positivo de itens de outros grupos (ex: cerveja/drinks) que acertem por acaso
+    // uma única palavra genérica do nome de algum vinho
+    if (melhorIdx === -1 || (melhorScore < 2 && melhorScore < palavrasPdv.size)) continue;
 
     const codigo = itensEstoque[melhorIdx].codigo;
     porCodigo[codigo] = (porCodigo[codigo] || 0) + it.qtd;
@@ -1737,8 +1778,11 @@ function extrairItensPorGrupo(texto, matchGrupo) {
   return itens;
 }
 
+// Alguns vinhos são lançados no PDV por engano dentro do grupo BEBIDA ALCOOLICA (ex: Bons Ventos,
+// Luiz Porto) — capturamos esse grupo também aqui; o casamento por palavras-chave contra o
+// catálogo de vinhos garante que só esses itens (que têm nome de vinho) sejam de fato atribuídos.
 function extrairItensVinho(texto) {
-  return extrairItensPorGrupo(texto, g => g === 'VINHOS');
+  return extrairItensPorGrupo(texto, g => g === 'VINHOS' || g === 'BEBIDA ALCOOLICA');
 }
 
 app.get('/api/debug-grupos-bebidas', async (req, res) => {
@@ -2013,6 +2057,7 @@ app.post('/api/bebidas/alcoolicas/novo', (req, res) => {
     codigo: codigoLimpo,
     nome: nomeLimpo,
     tamanho: String(tamanho || 'UN').trim(),
+    grupo: String(req.body.grupo || ''),
     estoqueInicial: +estoqueInicial || 0,
     vendas: 0,
     entradas: 0,
@@ -2032,7 +2077,7 @@ app.get('/api/bebidas/alcoolicas/auditoria', (req, res) => {
   res.json({ itens });
 });
 
-const CAMPOS_TEXTO_BEBIDA_ALC = ['observacao', 'nome', 'tamanho'];
+const CAMPOS_TEXTO_BEBIDA_ALC = ['observacao', 'nome', 'tamanho', 'grupo'];
 app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
   if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_BEBIDA_ALC].includes(campo)) {
