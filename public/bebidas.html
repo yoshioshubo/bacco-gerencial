@@ -82,9 +82,16 @@
 </div>
 
 <div class="main">
+  <div class="subtabbar">
+    <button class="subtab active" id="btnSecVinhos" onclick="trocarSubAba('vinhos')">Vinhos</button>
+    <button class="subtab" id="btnSecAlcoolicas" onclick="trocarSubAba('alcoolicas')">Bebidas Alcoólicas</button>
+    <button class="subtab" disabled title="Em breve">Não Alcoólicas</button>
+  </div>
+
+  <div id="secVinhos">
   <div class="ph">
     <div>
-      <h1>Controle de Bebidas</h1>
+      <h1>Controle de Vinhos</h1>
       <p id="phSub">Carregando…</p>
     </div>
     <div style="display:flex;gap:8px">
@@ -128,9 +135,7 @@
   </div>
 
   <div class="subtabbar" style="align-items:center">
-    <button class="subtab active" id="btnVinhos" onclick="trocarView('lista')">Vinhos</button>
-    <button class="subtab" disabled title="Em breve">Bebidas Alcoólicas</button>
-    <button class="subtab" disabled title="Em breve">Não Alcoólicas</button>
+    <button class="subtab active" id="btnVinhos" onclick="trocarView('lista')">Lista</button>
     <input type="text" id="busca" placeholder="🔍 Pesquisar vinho…" oninput="renderizar()"
       style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;width:200px">
     <button class="subtab" id="btnAuditoria" onclick="trocarView('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
@@ -167,6 +172,79 @@
       <tbody id="tbody"></tbody>
     </table>
   </div>
+  </div>
+
+  <div id="secAlcoolicas" style="display:none">
+    <div class="ph">
+      <div>
+        <h1>Controle de Bebidas Alcoólicas</h1>
+        <p id="phSubAlc">Carregando…</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-inserir" onclick="abrirFormNovoAlc()">+ Novo Item</button>
+        <button class="btn-inserir" id="btnEditarAlc" onclick="toggleEdicaoAlc()" style="background:var(--blue)">✏️ Editar campos</button>
+      </div>
+    </div>
+
+    <div class="tcard" id="formNovoAlc" style="display:none;margin-bottom:1.25rem;padding:1rem 1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr auto auto;gap:8px;align-items:end">
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Código</label>
+          <input class="in" style="width:100%" type="text" id="novoCodigoAlc">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome</label>
+          <input class="in" style="width:100%;text-align:left" type="text" id="novoNomeAlc" placeholder="Ex: Heineken">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Tamanho</label>
+          <input class="in" style="width:100%" type="text" id="novoTamanhoAlc" placeholder="Lata / Dose / 750ml">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Estoque Inicial</label>
+          <input class="in" style="width:100%" type="number" step="any" id="novoEstoqueAlc" value="0">
+        </div>
+        <button class="btn-inserir" onclick="salvarNovoAlc()">Salvar</button>
+        <button class="btn-inserir" style="background:var(--muted)" onclick="fecharFormNovoAlc()">Cancelar</button>
+      </div>
+      <div id="novoAlcErro" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="subtabbar" style="align-items:center">
+      <button class="subtab active" id="btnAlcLista" onclick="trocarViewAlc('lista')">Lista</button>
+      <input type="text" id="buscaAlc" placeholder="🔍 Pesquisar item…" oninput="renderizarAlc()"
+        style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;width:200px">
+      <button class="subtab" id="btnAlcAuditoria" onclick="trocarViewAlc('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
+    </div>
+
+    <div class="resumo">
+      <div class="rcard"><div class="lbl">Estoque Inicial (total)</div><div class="val" id="rInicialAlc">—</div></div>
+      <div class="rcard"><div class="lbl">Entradas (total)</div><div class="val" id="rEntradasAlc">—</div></div>
+      <div class="rcard"><div class="lbl">Vendas (total)</div><div class="val negativo" id="rVendasAlc">—</div></div>
+      <div class="rcard"><div class="lbl">Estoque Final (total)</div><div class="val" id="rFinalAlc">—</div></div>
+      <div class="rcard"><div class="lbl">Itens cadastrados</div><div class="val" id="rQtdAlc">—</div></div>
+      <div class="rcard" style="border-color:var(--green)"><div class="lbl">Auditados</div><div class="val" id="rAuditadosAlc" style="color:var(--green-dk)">—</div></div>
+    </div>
+
+    <div class="tcard">
+      <table id="tblAlc">
+        <thead id="theadAlc">
+          <tr>
+            <th>Código</th>
+            <th onclick="ordenarPorAlc('nome')">Item ↕</th>
+            <th>Tamanho</th>
+            <th class="num">Estoque Inicial</th>
+            <th class="num">Vendas</th>
+            <th class="num">Entradas</th>
+            <th class="num">Estoque Final</th>
+            <th class="num">Auditoria</th>
+            <th>Observação</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyAlc"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -177,6 +255,16 @@ let itensCache = [];
 let ordemCampo = 'nome', ordemAsc = true;
 let viewAtual = 'lista';
 let modoEdicao = false;
+let subAba = 'vinhos';
+
+function trocarSubAba(nome) {
+  subAba = nome;
+  document.getElementById('btnSecVinhos').classList.toggle('active', nome === 'vinhos');
+  document.getElementById('btnSecAlcoolicas').classList.toggle('active', nome === 'alcoolicas');
+  document.getElementById('secVinhos').style.display = nome === 'vinhos' ? '' : 'none';
+  document.getElementById('secAlcoolicas').style.display = nome === 'alcoolicas' ? '' : 'none';
+  if (nome === 'alcoolicas' && !itensAlcCache.length) carregarAlc();
+}
 
 function toggleEdicao() {
   modoEdicao = !modoEdicao;
@@ -375,6 +463,188 @@ async function atualizar(codigo, campo, valor) {
     const idx = itensCache.findIndex(i => i.codigo === codigo);
     if (idx >= 0) itensCache[idx] = { ...itensCache[idx], ...d.item };
     if (viewAtual === 'auditoria') carregar(); else renderizar();
+  }
+}
+
+let itensAlcCache = [];
+let ordemCampoAlc = 'nome', ordemAscAlc = true;
+let viewAtualAlc = 'lista';
+let modoEdicaoAlc = false;
+
+function toggleEdicaoAlc() {
+  modoEdicaoAlc = !modoEdicaoAlc;
+  const btn = document.getElementById('btnEditarAlc');
+  btn.textContent = modoEdicaoAlc ? '✓ Concluir edição' : '✏️ Editar campos';
+  btn.style.background = modoEdicaoAlc ? 'var(--green)' : 'var(--blue)';
+  renderizarAlc();
+}
+
+function abrirFormNovoAlc() {
+  document.getElementById('formNovoAlc').style.display = '';
+  document.getElementById('novoAlcErro').style.display = 'none';
+  document.getElementById('novoCodigoAlc').focus();
+}
+
+function fecharFormNovoAlc() {
+  document.getElementById('formNovoAlc').style.display = 'none';
+  ['novoCodigoAlc','novoNomeAlc','novoTamanhoAlc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('novoEstoqueAlc').value = 0;
+}
+
+async function salvarNovoAlc() {
+  const codigo = document.getElementById('novoCodigoAlc').value.trim();
+  const nome = document.getElementById('novoNomeAlc').value.trim();
+  const tamanho = document.getElementById('novoTamanhoAlc').value.trim() || 'UN';
+  const estoqueInicial = document.getElementById('novoEstoqueAlc').value || 0;
+
+  const erroEl = document.getElementById('novoAlcErro');
+  if (!codigo || !nome) {
+    erroEl.textContent = 'Preencha ao menos o código e o nome do item.';
+    erroEl.style.display = '';
+    return;
+  }
+
+  const r = await fetch('/api/bebidas/alcoolicas/novo', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, nome, tamanho, estoqueInicial })
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    erroEl.textContent = d.error || 'Erro ao salvar.';
+    erroEl.style.display = '';
+    return;
+  }
+  itensAlcCache.push(d.item);
+  fecharFormNovoAlc();
+  renderizarAlc();
+}
+
+async function carregarAlc() {
+  if (viewAtualAlc === 'auditoria') {
+    const r = await fetch('/api/bebidas/alcoolicas/auditoria');
+    const d = await r.json();
+    itensAlcCache = d.itens || [];
+  } else {
+    const r = await fetch('/api/bebidas/alcoolicas');
+    const d = await r.json();
+    itensAlcCache = d.itens || [];
+  }
+  renderizarAlc();
+}
+
+function trocarViewAlc(view) {
+  viewAtualAlc = view;
+  document.getElementById('btnAlcLista').classList.toggle('active', view === 'lista');
+  document.getElementById('btnAlcAuditoria').classList.toggle('active', view === 'auditoria');
+  carregarAlc();
+}
+
+function ordenarPorAlc(campo) {
+  if (ordemCampoAlc === campo) ordemAscAlc = !ordemAscAlc; else { ordemCampoAlc = campo; ordemAscAlc = true; }
+  renderizarAlc();
+}
+
+function renderizarAlc() {
+  const termoBusca = (document.getElementById('buscaAlc')?.value || '').trim().toLowerCase();
+  const filtrados = termoBusca ? itensAlcCache.filter(it => it.nome.toLowerCase().includes(termoBusca)) : itensAlcCache;
+
+  const itens = [...filtrados].sort((a,b) => {
+    const r = String(a[ordemCampoAlc]).localeCompare(String(b[ordemCampoAlc]), 'pt-BR', {numeric:true});
+    return ordemAscAlc ? r : -r;
+  });
+
+  const thead = document.getElementById('theadAlc');
+  const tbody = document.getElementById('tbodyAlc');
+
+  if (viewAtualAlc === 'auditoria') {
+    document.getElementById('phSubAlc').textContent = `${itens.length} itens com divergência entre estoque e contagem física`;
+    thead.innerHTML = `<tr>
+      <th>Código</th><th onclick="ordenarPorAlc('nome')">Item ↕</th><th class="num">Estoque Final (sistema)</th>
+      <th class="num">Contagem Física</th><th class="num">Diferença</th><th>Observação</th></tr>`;
+    if (!itens.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">Nenhuma divergência encontrada — tudo bate com a contagem física.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = itens.map(it => `
+      <tr>
+        <td class="mono">${it.codigo}</td>
+        <td>${it.nome}</td>
+        <td class="num">${N(it.estoqueFinal)}</td>
+        <td class="num">${N(it.auditoria)}</td>
+        <td class="num negativo">${it.diferenca > 0 ? '+' : ''}${N(it.diferenca)}</td>
+        <td><input class="in" style="width:220px;text-align:left" type="text" placeholder="Justificativa…" value="${it.observacao || ''}" onchange="atualizarAlc('${it.codigo}','observacao',this.value)"></td>
+      </tr>`).join('');
+    return;
+  }
+
+  thead.innerHTML = `<tr>
+    <th>Código</th><th onclick="ordenarPorAlc('nome')">Item ↕</th><th>Tamanho</th>
+    <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
+    <th class="num">Estoque Final</th><th class="num">Auditoria</th><th>Observação</th></tr>`;
+
+  document.getElementById('phSubAlc').textContent = termoBusca
+    ? `${itens.length} de ${itensAlcCache.length} itens (filtrado por "${termoBusca}")`
+    : `${itens.length} itens cadastrados`;
+  document.getElementById('rQtdAlc').textContent = itensAlcCache.length;
+  document.getElementById('rInicialAlc').textContent = N(itensAlcCache.reduce((s,i)=>s+i.estoqueInicial,0));
+  document.getElementById('rVendasAlc').textContent = N(itensAlcCache.reduce((s,i)=>s+(i.vendas||0),0));
+  document.getElementById('rEntradasAlc').textContent = N(itensAlcCache.reduce((s,i)=>s+(i.entradas||0),0));
+  document.getElementById('rFinalAlc').textContent = N(itensAlcCache.reduce((s,i)=>s+i.estoqueFinal,0));
+  document.getElementById('rAuditadosAlc').textContent = itensAlcCache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
+
+  if (!itens.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.'}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = itens.map(it => linhaAlc(it)).join('');
+}
+
+function linhaAlc(it) {
+  const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
+
+  const nomeCell = modoEdicaoAlc
+    ? `<input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizarAlc('${it.codigo}','nome',this.value)">`
+    : it.nome;
+  const tamanhoCell = modoEdicaoAlc
+    ? `<input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizarAlc('${it.codigo}','tamanho',this.value)">`
+    : it.tamanho;
+  const vendasCell = modoEdicaoAlc
+    ? `<input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizarAlc('${it.codigo}','vendas',this.value)">`
+    : `<span class="${(it.vendas||0) < 0 ? 'negativo' : ''}">${N(it.vendas ?? 0)}</span>`;
+  const auditoriaCell = modoEdicaoAlc
+    ? `<input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizarAlc('${it.codigo}','auditoria',this.value)">`
+    : (it.auditoria !== null && it.auditoria !== undefined ? `<span class="${divergente ? 'negativo' : ''}">${N(it.auditoria)}</span>` : '—');
+  const obsCell = modoEdicaoAlc
+    ? `<input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizarAlc('${it.codigo}','observacao',this.value)">`
+    : (it.observacao || '—');
+  const entradasCell = modoEdicaoAlc
+    ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizarAlc('${it.codigo}','entradas',this.value)">`
+    : N(it.entradas ?? 0);
+
+  return `<tr>
+    <td class="mono">${it.codigo}</td>
+    <td>${nomeCell}</td>
+    <td class="mono">${tamanhoCell}</td>
+    <td class="num">${N(it.estoqueInicial)}</td>
+    <td class="num">${vendasCell}</td>
+    <td class="num">${entradasCell}</td>
+    <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
+    <td class="num">${auditoriaCell}</td>
+    <td>${obsCell}</td>
+  </tr>`;
+}
+
+async function atualizarAlc(codigo, campo, valor) {
+  const r = await fetch('/api/bebidas/alcoolicas/atualizar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, campo, valor })
+  });
+  const d = await r.json();
+  if (d.item) {
+    const idx = itensAlcCache.findIndex(i => i.codigo === codigo);
+    if (idx >= 0) itensAlcCache[idx] = { ...itensAlcCache[idx], ...d.item };
+    if (viewAtualAlc === 'auditoria') carregarAlc(); else renderizarAlc();
   }
 }
 

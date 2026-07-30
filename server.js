@@ -19,6 +19,7 @@ const CUSTOS_CORRECOES_FILE = path.join(DATA_DIR, 'custos-correcoes.json');
 const BEBIDAS_VINHOS_FILE = path.join(DATA_DIR, 'bebidas-vinhos.json');
 const BEBIDAS_TACA_FILE = path.join(DATA_DIR, 'bebidas-vinhos-taca.json');
 const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.json');
+const BEBIDAS_ALC_FILE = path.join(DATA_DIR, 'bebidas-alcoolicas.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -305,6 +306,73 @@ function loadVinhos() {
   return itens;
 }
 function saveVinhos(itens) { fs.writeFileSync(BEBIDAS_VINHOS_FILE, JSON.stringify(itens, null, 2)); }
+
+// ── Bebidas / Bebidas Alcoólicas (cerveja, dose, drinks) — base inicial de estoque ──
+// Catálogo montado a partir dos itens vendidos em julho/2026 (GRUPO:BEBIDA ALCOOLICA,
+// CERVEJA, WHISKIE e COQUETEIS do PDV) — sem contagem física inicial (Estoque Inicial = 0),
+// a auditoria é lançada manualmente pelo usuário quando a contagem for feita.
+const SEED_BEBIDAS_ALC_RAW = [
+  ['BA001', 'Gin Tônica Apple', 'Dose', 0],
+  ['BA002', 'Expresso 43 On The Rocks', 'Dose', 0],
+  ['BA003', 'Moscow Mule', 'Dose', 0],
+  ['BA004', 'Aged Negroni On The Rocks', 'Dose', 0],
+  ['BA005', 'Aperol Spritz', 'Dose', 0],
+  ['BA006', 'Smirnoff', 'Dose', 0],
+  ['BA007', 'Campari', 'Dose', 0],
+  ['BA008', 'Cachaça Dom Bre', 'Dose', 0],
+  ['BA009', 'Cointreau', 'Dose', 0],
+  ['BA010', 'Tropical', 'Dose', 0],
+  ['BA011', 'Bons Ventos Tinto', '750ml', 0],
+  ['BA012', 'Cerveja Corona', 'Lata', 0],
+  ['BA013', 'Cerveja Corona', 'Long Neck', 0],
+  ['BA014', 'Cerveja Stella', 'Lata', 0],
+  ['BA015', 'Cerveja Stella', 'Long Neck', 0],
+  ['BA016', 'Combo Corona 5 Latas', 'Combo', 0],
+  ['BA017', 'Cosmopolita', 'Dose', 0],
+  ['BA018', 'Dom Bre Ouro', 'Dose', 0],
+  ['BA019', 'Limoncello', 'Dose', 0],
+  ['BA020', 'Heineken', 'Lata', 0],
+  ['BA021', 'Heineken', 'Long Neck', 0],
+  ['BA022', 'J.W. Black Label', 'Dose', 0],
+  ['BA023', 'Jack Daniels Gentleman', 'Dose', 0],
+  ['BA024', 'Jack Daniels Honey', 'Dose', 0],
+  ['BA025', 'Limoncello Spritz', 'Dose', 0],
+  ['BA026', 'Luiz Porto Cabernet Sauvignon', '750ml', 0],
+  ['BA027', 'Luiz Porto Chardonnay', '750ml', 0],
+  ['BA028', 'Stella Pure Gold', 'Long Neck', 0],
+  ['BA029', 'Tequila Ouro', 'Dose', 0],
+  ['BA030', 'Tequila Prata', 'Dose', 0],
+  ['BA031', 'Caipirinha', 'Dose', 0]
+];
+
+function seedItensBebidasAlc(lista) {
+  return lista.map(([codigo, nome, tamanho, estoqueInicial]) =>
+    ({ codigo, nome, tamanho, estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' }));
+}
+
+function loadBebidasAlc() {
+  const existeArquivo = fs.existsSync(BEBIDAS_ALC_FILE);
+  const itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_ALC_FILE, 'utf8')) : seedItensBebidasAlc(SEED_BEBIDAS_ALC_RAW);
+  if (!existeArquivo) fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2));
+  return itens;
+}
+function saveBebidasAlc(itens) { fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2)); }
+
+const STOPWORDS_BEBIDA_ALC = new Set(['DE','DO','DA','DOS','DAS','COM','DOSE','ON','THE','ROCKS','LATA','LONG','NECK','CERVEJA','CERV','GARRAFA','750ML','375ML']);
+const GRUPOS_BEBIDA_ALC = ['BEBIDA ALCOOLICA', 'CERVEJA', 'WHISKIE', 'COQUETEIS'];
+
+// Apura as vendas de bebidas alcoólicas do mês, mesma lógica usada para os vinhos:
+// casa cada item vendido no PDV com o item do catálogo de MAIOR score de palavras em comum.
+function apurarVendasBebidasAlcDoMes(texto) {
+  const itensPdv = extrairItensPorGrupo(texto, g => GRUPOS_BEBIDA_ALC.includes(g));
+  const itensEstoque = loadBebidasAlc();
+  const porCodigo = casarItensPorPalavras(itensPdv, itensEstoque, STOPWORDS_BEBIDA_ALC);
+  for (const item of itensEstoque) {
+    const qtdVendida = porCodigo[item.codigo] || 0;
+    item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
+  }
+  saveBebidasAlc(itensEstoque);
+}
 
 // ── Sessão e middleware ───────────────────────────────────────────────────────
 app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false,
@@ -1055,6 +1123,7 @@ async function sincronizar() {
     // Apura vendas de vinho do mês corrente (ciclo mensal — recalcula do zero a cada sincronização)
     if (mes === mesAtualKey() && vText) {
       try { apurarVendasVinhosDoMes(vText); } catch(e) { console.warn('[Bebidas/Vinhos]', e.message); }
+      try { apurarVendasBebidasAlcDoMes(vText); } catch(e) { console.warn('[Bebidas/Alcoolicas]', e.message); }
     }
   }
 
@@ -1547,6 +1616,28 @@ function palavrasSignificativas(nome) {
   return normalizaTexto(nome).split(/\s+/).filter(p => p.length >= 3 && !STOPWORDS_VINHO.has(p));
 }
 
+// Casa cada item vendido (PDV) com o item da base de estoque que tiver MAIS palavras
+// significativas em comum, evitando duplicar a mesma venda em itens que compartilham marca/prefixo.
+// Retorna { codigo: quantidadeTotalVendida }.
+function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
+  const sigFn = (nome) => normalizaTexto(nome).split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p));
+  const palavrasPorItem = itensEstoque.map(it => sigFn(it.nome));
+  const porCodigo = {};
+  for (const it of itensPdv) {
+    const palavrasPdv = new Set(sigFn(it.nome));
+    if (!palavrasPdv.size) continue;
+    let melhorIdx = -1, melhorScore = 0;
+    itensEstoque.forEach((_, idx) => {
+      const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
+      if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
+    });
+    if (melhorIdx === -1) continue;
+    const codigo = itensEstoque[melhorIdx].codigo;
+    porCodigo[codigo] = (porCodigo[codigo] || 0) + it.qtd;
+  }
+  return porCodigo;
+}
+
 // Apura as vendas de vinho do mês (a partir do texto do PDF de vendas) e atualiza o campo
 // "vendas" (negativo) de cada item da base de estoque. Casa cada linha do PDV com o item da
 // base que tiver MAIS palavras em comum (não apenas a primeira), para não duplicar a mesma
@@ -1899,6 +1990,63 @@ app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
     item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
   }
   saveVinhos(itens);
+  res.json({ ok: true, item: comEstoqueFinal(item) });
+});
+
+app.get('/api/bebidas/alcoolicas', (req, res) => {
+  const itens = loadBebidasAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+app.post('/api/bebidas/alcoolicas/novo', (req, res) => {
+  const { codigo, nome, tamanho, estoqueInicial } = req.body;
+  const codigoLimpo = String(codigo || '').trim();
+  const nomeLimpo = String(nome || '').trim();
+  if (!codigoLimpo || !nomeLimpo) return res.status(400).json({ error: 'Código e nome são obrigatórios.' });
+
+  const itens = loadBebidasAlc();
+  if (itens.some(i => i.codigo === codigoLimpo)) {
+    return res.status(409).json({ error: `Já existe um item cadastrado com o código ${codigoLimpo}.` });
+  }
+
+  const novo = {
+    codigo: codigoLimpo,
+    nome: nomeLimpo,
+    tamanho: String(tamanho || 'UN').trim(),
+    estoqueInicial: +estoqueInicial || 0,
+    vendas: 0,
+    entradas: 0,
+    auditoria: null,
+    observacao: ''
+  };
+  itens.push(novo);
+  saveBebidasAlc(itens);
+  res.json({ ok: true, item: comEstoqueFinal(novo) });
+});
+
+app.get('/api/bebidas/alcoolicas/auditoria', (req, res) => {
+  const itens = loadBebidasAlc().map(comEstoqueFinal)
+    .filter(it => it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal)
+    .map(it => ({ ...it, diferenca: +((+it.auditoria) - it.estoqueFinal).toFixed(3) }))
+    .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+const CAMPOS_TEXTO_BEBIDA_ALC = ['observacao', 'nome', 'tamanho'];
+app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
+  const { codigo, campo, valor } = req.body;
+  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_BEBIDA_ALC].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho) são obrigatórios.' });
+  }
+  const itens = loadBebidasAlc();
+  const item = itens.find(i => i.codigo === codigo);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
+  if (CAMPOS_TEXTO_BEBIDA_ALC.includes(campo)) {
+    item[campo] = String(valor || '');
+  } else {
+    item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+  }
+  saveBebidasAlc(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
 
