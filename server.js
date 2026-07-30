@@ -1669,15 +1669,22 @@ app.get('/api/debug-grupos-bebidas', async (req, res) => {
     }
 
     // amostra de itens capturados para grupos que contenham "ALCOOL"
-    const itensAlcool = extrairItensPorGrupo(texto, g => normalizaTexto(g).includes('ALCOOL') && !normalizaTexto(g).includes('NAO'));
+    const gruposAlvo = ['BEBIDA ALCOOLICA', 'CERVEJA', 'WHISKIE', 'COQUETEIS'];
+    const itensAlcool = extrairItensPorGrupo(texto, g => gruposAlvo.includes(g));
     const itensNaoAlcool = extrairItensPorGrupo(texto, g => normalizaTexto(g).includes('ALCOOL') && normalizaTexto(g).includes('NAO'));
+
+    const porNome = {};
+    for (const it of itensAlcool) {
+      if (!porNome[it.nome]) porNome[it.nome] = 0;
+      porNome[it.nome] += it.qtd;
+    }
+    const unicos = Object.entries(porNome).map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd) })).sort((a,b) => a.nome.localeCompare(b.nome));
 
     res.json({
       arquivo: arquivo.name,
       grupos: [...gruposEncontrados].sort(),
-      amostraAlcoolica: itensAlcool.slice(0, 30),
       totalAlcoolica: itensAlcool.length,
-      amostraNaoAlcoolica: itensNaoAlcool.slice(0, 30),
+      produtosUnicos: unicos,
       totalNaoAlcoolica: itensNaoAlcool.length
     });
   } catch(e) {
