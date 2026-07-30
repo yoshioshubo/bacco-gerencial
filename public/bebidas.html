@@ -85,7 +85,7 @@
   <div class="subtabbar">
     <button class="subtab active" id="btnSecVinhos" onclick="trocarSubAba('vinhos')">Vinhos</button>
     <button class="subtab" id="btnSecAlcoolicas" onclick="trocarSubAba('alcoolicas')">Bebidas Alcoólicas</button>
-    <button class="subtab" disabled title="Em breve">Não Alcoólicas</button>
+    <button class="subtab" id="btnSecNaoAlcoolicas" onclick="trocarSubAba('naoalcoolicas')">Não Alcoólicas</button>
   </div>
 
   <div id="secVinhos">
@@ -254,6 +254,89 @@
       </table>
     </div>
   </div>
+
+  <div id="secNaoAlcoolicas" style="display:none">
+    <div class="ph">
+      <div>
+        <h1>Controle de Bebidas Não Alcoólicas</h1>
+        <p id="phSubNA">Carregando…</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-inserir" onclick="abrirFormNovoNA()">+ Novo Item</button>
+        <button class="btn-inserir" id="btnEditarNA" onclick="toggleEdicaoNA()" style="background:var(--blue)">✏️ Editar campos</button>
+      </div>
+    </div>
+
+    <div class="tcard" id="formNovoNA" style="display:none;margin-bottom:1.25rem;padding:1rem 1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr auto auto;gap:8px;align-items:end">
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Código</label>
+          <input class="in" style="width:100%" type="text" id="novoCodigoNA">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Nome</label>
+          <input class="in" style="width:100%;text-align:left" type="text" id="novoNomeNA" placeholder="Ex: Água Com Gás">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Tamanho</label>
+          <input class="in" style="width:100%" type="text" id="novoTamanhoNA" placeholder="Garrafa / Lata / Copo">
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Grupo</label>
+          <select class="in" style="width:100%" id="novoGrupoNA">
+            <option value="">—</option>
+            <option value="Água">Água</option>
+            <option value="Refrigerante">Refrigerante</option>
+            <option value="Suco">Suco</option>
+            <option value="Outros">Outros</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Estoque Inicial</label>
+          <input class="in" style="width:100%" type="number" step="any" id="novoEstoqueNA" value="0">
+        </div>
+        <button class="btn-inserir" onclick="salvarNovoNA()">Salvar</button>
+        <button class="btn-inserir" style="background:var(--muted)" onclick="fecharFormNovoNA()">Cancelar</button>
+      </div>
+      <div id="novoNAErro" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="subtabbar" style="align-items:center">
+      <button class="subtab active" id="btnNALista" onclick="trocarViewNA('lista')">Lista</button>
+      <input type="text" id="buscaNA" placeholder="🔍 Pesquisar item…" oninput="renderizarNA()"
+        style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;width:200px">
+      <button class="subtab" id="btnNAAuditoria" onclick="trocarViewNA('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
+    </div>
+
+    <div class="resumo">
+      <div class="rcard"><div class="lbl">Estoque Inicial (total)</div><div class="val" id="rInicialNA">—</div></div>
+      <div class="rcard"><div class="lbl">Entradas (total)</div><div class="val" id="rEntradasNA">—</div></div>
+      <div class="rcard"><div class="lbl">Vendas (total)</div><div class="val negativo" id="rVendasNA">—</div></div>
+      <div class="rcard"><div class="lbl">Estoque Final (total)</div><div class="val" id="rFinalNA">—</div></div>
+      <div class="rcard"><div class="lbl">Itens cadastrados</div><div class="val" id="rQtdNA">—</div></div>
+      <div class="rcard" style="border-color:var(--green)"><div class="lbl">Auditados</div><div class="val" id="rAuditadosNA" style="color:var(--green-dk)">—</div></div>
+    </div>
+
+    <div class="tcard">
+      <table id="tblNA">
+        <thead id="theadNA">
+          <tr>
+            <th>Código</th>
+            <th>Grupo</th>
+            <th onclick="ordenarPorNA('nome')">Item ↕</th>
+            <th>Tamanho</th>
+            <th class="num">Estoque Inicial</th>
+            <th class="num">Vendas</th>
+            <th class="num">Entradas</th>
+            <th class="num">Estoque Final</th>
+            <th class="num">Auditoria</th>
+            <th>Observação</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyNA"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -270,9 +353,12 @@ function trocarSubAba(nome) {
   subAba = nome;
   document.getElementById('btnSecVinhos').classList.toggle('active', nome === 'vinhos');
   document.getElementById('btnSecAlcoolicas').classList.toggle('active', nome === 'alcoolicas');
+  document.getElementById('btnSecNaoAlcoolicas').classList.toggle('active', nome === 'naoalcoolicas');
   document.getElementById('secVinhos').style.display = nome === 'vinhos' ? '' : 'none';
   document.getElementById('secAlcoolicas').style.display = nome === 'alcoolicas' ? '' : 'none';
+  document.getElementById('secNaoAlcoolicas').style.display = nome === 'naoalcoolicas' ? '' : 'none';
   if (nome === 'alcoolicas' && !itensAlcCache.length) carregarAlc();
+  if (nome === 'naoalcoolicas' && !itensNACache.length) carregarNA();
 }
 
 function toggleEdicao() {
@@ -671,6 +757,205 @@ async function atualizarAlc(codigo, campo, valor) {
     const idx = itensAlcCache.findIndex(i => i.codigo === codigo);
     if (idx >= 0) itensAlcCache[idx] = { ...itensAlcCache[idx], ...d.item };
     if (viewAtualAlc === 'auditoria') carregarAlc(); else renderizarAlc();
+  }
+}
+
+let itensNACache = [];
+let ordemCampoNA = 'nome', ordemAscNA = true;
+let viewAtualNA = 'lista';
+let modoEdicaoNA = false;
+
+function toggleEdicaoNA() {
+  modoEdicaoNA = !modoEdicaoNA;
+  const btn = document.getElementById('btnEditarNA');
+  btn.textContent = modoEdicaoNA ? '✓ Concluir edição' : '✏️ Editar campos';
+  btn.style.background = modoEdicaoNA ? 'var(--green)' : 'var(--blue)';
+  renderizarNA();
+}
+
+function abrirFormNovoNA() {
+  document.getElementById('formNovoNA').style.display = '';
+  document.getElementById('novoNAErro').style.display = 'none';
+  document.getElementById('novoCodigoNA').focus();
+}
+
+function fecharFormNovoNA() {
+  document.getElementById('formNovoNA').style.display = 'none';
+  ['novoCodigoNA','novoNomeNA','novoTamanhoNA'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('novoGrupoNA').value = '';
+  document.getElementById('novoEstoqueNA').value = 0;
+}
+
+async function salvarNovoNA() {
+  const codigo = document.getElementById('novoCodigoNA').value.trim();
+  const nome = document.getElementById('novoNomeNA').value.trim();
+  const tamanho = document.getElementById('novoTamanhoNA').value.trim() || 'UN';
+  const grupo = document.getElementById('novoGrupoNA').value;
+  const estoqueInicial = document.getElementById('novoEstoqueNA').value || 0;
+
+  const erroEl = document.getElementById('novoNAErro');
+  if (!codigo || !nome) {
+    erroEl.textContent = 'Preencha ao menos o código e o nome do item.';
+    erroEl.style.display = '';
+    return;
+  }
+
+  const r = await fetch('/api/bebidas/naoalcoolicas/novo', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, nome, tamanho, grupo, estoqueInicial })
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    erroEl.textContent = d.error || 'Erro ao salvar.';
+    erroEl.style.display = '';
+    return;
+  }
+  itensNACache.push(d.item);
+  fecharFormNovoNA();
+  renderizarNA();
+}
+
+async function carregarNA() {
+  if (viewAtualNA === 'auditoria') {
+    const r = await fetch('/api/bebidas/naoalcoolicas/auditoria');
+    const d = await r.json();
+    itensNACache = d.itens || [];
+  } else {
+    const r = await fetch('/api/bebidas/naoalcoolicas');
+    const d = await r.json();
+    itensNACache = d.itens || [];
+  }
+  renderizarNA();
+}
+
+function trocarViewNA(view) {
+  viewAtualNA = view;
+  document.getElementById('btnNALista').classList.toggle('active', view === 'lista');
+  document.getElementById('btnNAAuditoria').classList.toggle('active', view === 'auditoria');
+  carregarNA();
+}
+
+function ordenarPorNA(campo) {
+  if (ordemCampoNA === campo) ordemAscNA = !ordemAscNA; else { ordemCampoNA = campo; ordemAscNA = true; }
+  renderizarNA();
+}
+
+function renderizarNA() {
+  const termoBusca = (document.getElementById('buscaNA')?.value || '').trim().toLowerCase();
+  const filtrados = termoBusca ? itensNACache.filter(it => it.nome.toLowerCase().includes(termoBusca)) : itensNACache;
+
+  const itens = [...filtrados].sort((a,b) => {
+    const r = String(a[ordemCampoNA]).localeCompare(String(b[ordemCampoNA]), 'pt-BR', {numeric:true});
+    return ordemAscNA ? r : -r;
+  });
+
+  const thead = document.getElementById('theadNA');
+  const tbody = document.getElementById('tbodyNA');
+
+  if (viewAtualNA === 'auditoria') {
+    document.getElementById('phSubNA').textContent = `${itens.length} itens com divergência entre estoque e contagem física`;
+    thead.innerHTML = `<tr>
+      <th>Código</th><th onclick="ordenarPorNA('nome')">Item ↕</th><th class="num">Estoque Final (sistema)</th>
+      <th class="num">Contagem Física</th><th class="num">Diferença</th><th>Observação</th></tr>`;
+    if (!itens.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">Nenhuma divergência encontrada — tudo bate com a contagem física.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = itens.map(it => `
+      <tr>
+        <td class="mono">${it.codigo}</td>
+        <td>${it.nome}</td>
+        <td class="num">${N(it.estoqueFinal)}</td>
+        <td class="num">${N(it.auditoria)}</td>
+        <td class="num negativo">${it.diferenca > 0 ? '+' : ''}${N(it.diferenca)}</td>
+        <td><input class="in" style="width:220px;text-align:left" type="text" placeholder="Justificativa…" value="${it.observacao || ''}" onchange="atualizarNA('${it.codigo}','observacao',this.value)"></td>
+      </tr>`).join('');
+    return;
+  }
+
+  thead.innerHTML = `<tr>
+    <th>Código</th><th>Grupo</th><th onclick="ordenarPorNA('nome')">Item ↕</th><th>Tamanho</th>
+    <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
+    <th class="num">Estoque Final</th><th class="num">Auditoria</th><th>Observação</th></tr>`;
+
+  document.getElementById('phSubNA').textContent = termoBusca
+    ? `${itens.length} de ${itensNACache.length} itens (filtrado por "${termoBusca}")`
+    : `${itens.length} itens cadastrados`;
+  document.getElementById('rQtdNA').textContent = itensNACache.length;
+  document.getElementById('rInicialNA').textContent = N(itensNACache.reduce((s,i)=>s+i.estoqueInicial,0));
+  document.getElementById('rVendasNA').textContent = N(itensNACache.reduce((s,i)=>s+(i.vendas||0),0));
+  document.getElementById('rEntradasNA').textContent = N(itensNACache.reduce((s,i)=>s+(i.entradas||0),0));
+  document.getElementById('rFinalNA').textContent = N(itensNACache.reduce((s,i)=>s+i.estoqueFinal,0));
+  document.getElementById('rAuditadosNA').textContent = itensNACache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
+
+  if (!itens.length) {
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.'}</td></tr>`;
+    return;
+  }
+
+  const ORDEM_GRUPOS = ['Água', 'Refrigerante', 'Suco', 'Outros', ''];
+  const LABEL_GRUPO = { 'Água': 'Água', Refrigerante: 'Refrigerantes', Suco: 'Sucos', Outros: 'Outros', '': 'Sem Grupo' };
+  const OPCOES_GRUPO = ['', 'Água', 'Refrigerante', 'Suco', 'Outros'];
+
+  let html = '';
+  for (const g of ORDEM_GRUPOS) {
+    const doGrupo = itens.filter(it => (it.grupo || '') === g);
+    if (!doGrupo.length) continue;
+    html += `<tr><td colspan="10" style="background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${LABEL_GRUPO[g]} (${doGrupo.length})</td></tr>`;
+    html += doGrupo.map(it => linhaNA(it, OPCOES_GRUPO)).join('');
+  }
+  tbody.innerHTML = html;
+}
+
+function linhaNA(it, OPCOES_GRUPO) {
+  const divergente = it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal;
+
+  const grupoCell = modoEdicaoNA
+    ? `<select class="in" style="width:100px" onchange="atualizarNA('${it.codigo}','grupo',this.value)">${OPCOES_GRUPO.map(g => `<option value="${g}" ${g===(it.grupo||'')?'selected':''}>${g || '—'}</option>`).join('')}</select>`
+    : (it.grupo || '—');
+  const nomeCell = modoEdicaoNA
+    ? `<input class="in" style="width:220px;text-align:left;text-transform:capitalize" type="text" value="${it.nome}" onchange="atualizarNA('${it.codigo}','nome',this.value)">`
+    : it.nome;
+  const tamanhoCell = modoEdicaoNA
+    ? `<input class="in" style="width:70px" type="text" value="${it.tamanho}" onchange="atualizarNA('${it.codigo}','tamanho',this.value)">`
+    : it.tamanho;
+  const vendasCell = modoEdicaoNA
+    ? `<input class="in" type="number" step="any" value="${it.vendas ?? 0}" onchange="atualizarNA('${it.codigo}','vendas',this.value)">`
+    : `<span class="${(it.vendas||0) < 0 ? 'negativo' : ''}">${N(it.vendas ?? 0)}</span>`;
+  const auditoriaCell = modoEdicaoNA
+    ? `<input class="in ${divergente ? 'negativo' : ''}" type="number" step="any" placeholder="—" value="${it.auditoria ?? ''}" onchange="atualizarNA('${it.codigo}','auditoria',this.value)">`
+    : (it.auditoria !== null && it.auditoria !== undefined ? `<span class="${divergente ? 'negativo' : ''}">${N(it.auditoria)}</span>` : '—');
+  const obsCell = modoEdicaoNA
+    ? `<input class="in" style="width:150px;text-align:left" type="text" placeholder="—" value="${it.observacao || ''}" onchange="atualizarNA('${it.codigo}','observacao',this.value)">`
+    : (it.observacao || '—');
+  const entradasCell = modoEdicaoNA
+    ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizarNA('${it.codigo}','entradas',this.value)">`
+    : N(it.entradas ?? 0);
+
+  return `<tr>
+    <td class="mono">${it.codigo}</td>
+    <td>${grupoCell}</td>
+    <td>${nomeCell}</td>
+    <td class="mono">${tamanhoCell}</td>
+    <td class="num">${N(it.estoqueInicial)}</td>
+    <td class="num">${vendasCell}</td>
+    <td class="num">${entradasCell}</td>
+    <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
+    <td class="num">${auditoriaCell}</td>
+    <td>${obsCell}</td>
+  </tr>`;
+}
+
+async function atualizarNA(codigo, campo, valor) {
+  const r = await fetch('/api/bebidas/naoalcoolicas/atualizar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ codigo, campo, valor })
+  });
+  const d = await r.json();
+  if (d.item) {
+    const idx = itensNACache.findIndex(i => i.codigo === codigo);
+    if (idx >= 0) itensNACache[idx] = { ...itensNACache[idx], ...d.item };
+    if (viewAtualNA === 'auditoria') carregarNA(); else renderizarNA();
   }
 }
 

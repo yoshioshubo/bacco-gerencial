@@ -20,6 +20,7 @@ const BEBIDAS_VINHOS_FILE = path.join(DATA_DIR, 'bebidas-vinhos.json');
 const BEBIDAS_TACA_FILE = path.join(DATA_DIR, 'bebidas-vinhos-taca.json');
 const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.json');
 const BEBIDAS_ALC_FILE = path.join(DATA_DIR, 'bebidas-alcoolicas.json');
+const BEBIDAS_NAOALC_FILE = path.join(DATA_DIR, 'bebidas-nao-alcoolicas.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -412,6 +413,68 @@ function apurarVendasBebidasAlcDoMes(texto) {
     item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
   }
   saveBebidasAlc(itensEstoque);
+}
+
+// ── Bebidas / Não Alcoólicas — base inicial de estoque ────────────────────────
+// Catálogo montado a partir dos itens vendidos em julho/2026 (GRUPO:BEBIDAS NAO ALCOOLICAS),
+// consolidando entradas repetidas com prefixo numérico de apto/comanda (ex: "0612 Coca Cola Zero")
+// no mesmo item base.
+const SEED_BEBIDAS_NAOALC_RAW = [
+  ['NA001', 'Água Sem Gás', 'Garrafa', 0],
+  ['NA002', 'Água Com Gás', 'Garrafa', 0],
+  ['NA003', 'Coca-Cola Zero', 'Lata', 0],
+  ['NA004', 'Suco de Frutas', 'Copo', 0],
+  ['NA005', 'Shot de Limão', 'Dose', 0],
+  ['NA006', 'Café Expresso', 'Xícara', 0],
+  ['NA007', 'Red Bull Tradicional', 'Lata', 0],
+  ['NA008', 'Soda Italiana Sabor Brasileiro', 'Copo', 0],
+  ['NA009', 'Like a Virgin', 'Dose', 0],
+  ['NA010', 'CAED Água Com Gás', 'Garrafa', 0],
+  ['NA011', 'CAED Água Sem Gás', 'Garrafa', 0],
+  ['NA012', 'CAED Coca-Cola Comum', 'Lata', 0],
+  ['NA013', 'CAED Coca-Cola Zero', 'Lata', 0],
+  ['NA014', 'CAED Guaraná Comum', 'Lata', 0],
+  ['NA015', 'CAED Guaraná Zero', 'Lata', 0]
+];
+
+const GRUPO_POR_CODIGO_NAOALC = {
+  NA001: 'Água', NA002: 'Água', NA010: 'Água', NA011: 'Água',
+  NA003: 'Refrigerante', NA007: 'Refrigerante', NA008: 'Refrigerante',
+  NA012: 'Refrigerante', NA013: 'Refrigerante', NA014: 'Refrigerante', NA015: 'Refrigerante',
+  NA004: 'Suco',
+  NA005: 'Outros', NA006: 'Outros', NA009: 'Outros'
+};
+const ORDEM_GRUPOS_NAOALC = ['Água', 'Refrigerante', 'Suco', 'Outros'];
+
+function seedItensBebidasNaoAlc(lista) {
+  return lista.map(([codigo, nome, tamanho, estoqueInicial]) =>
+    ({ codigo, nome, tamanho, grupo: GRUPO_POR_CODIGO_NAOALC[codigo] || '', estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' }));
+}
+
+function loadBebidasNaoAlc() {
+  const existeArquivo = fs.existsSync(BEBIDAS_NAOALC_FILE);
+  const itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_NAOALC_FILE, 'utf8')) : seedItensBebidasNaoAlc(SEED_BEBIDAS_NAOALC_RAW);
+  let mudou = !existeArquivo;
+  for (const item of itens) {
+    if (item.grupo === undefined) { item.grupo = GRUPO_POR_CODIGO_NAOALC[item.codigo] || ''; mudou = true; }
+  }
+  if (mudou) fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.stringify(itens, null, 2));
+  return itens;
+}
+function saveBebidasNaoAlc(itens) { fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.stringify(itens, null, 2)); }
+
+// COM/SEM NÃO entram como stopword — diferenciam "Água Com Gás" de "Água Sem Gás"
+const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA']);
+
+function apurarVendasBebidasNaoAlcDoMes(texto) {
+  const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS');
+  const itensEstoque = loadBebidasNaoAlc();
+  const porCodigo = casarItensPorPalavras(itensPdv, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
+  for (const item of itensEstoque) {
+    const qtdVendida = porCodigo[item.codigo] || 0;
+    item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
+  }
+  saveBebidasNaoAlc(itensEstoque);
 }
 
 // ── Sessão e middleware ───────────────────────────────────────────────────────
@@ -1164,6 +1227,7 @@ async function sincronizar() {
     if (mes === mesAtualKey() && vText) {
       try { apurarVendasVinhosDoMes(vText); } catch(e) { console.warn('[Bebidas/Vinhos]', e.message); }
       try { apurarVendasBebidasAlcDoMes(vText); } catch(e) { console.warn('[Bebidas/Alcoolicas]', e.message); }
+      try { apurarVendasBebidasNaoAlcDoMes(vText); } catch(e) { console.warn('[Bebidas/NaoAlcoolicas]', e.message); }
     }
   }
 
@@ -1661,7 +1725,8 @@ function palavrasSignificativas(nome) {
 // Retorna { codigo: quantidadeTotalVendida }.
 function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
   // Normaliza a abreviação do PDV "LNECK" para "LONG NECK" para casar com o nome do catálogo
-  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p));
+  // Ignora tokens puramente numéricos (ex: código de apto/comanda que às vezes vem na frente do nome)
+  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p) && !/^\d+$/.test(p));
   const palavrasPorItem = itensEstoque.map(it => sigFn(it.nome));
   const porCodigo = {};
   for (const it of itensPdv) {
@@ -2098,6 +2163,64 @@ app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
     item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
   }
   saveBebidasAlc(itens);
+  res.json({ ok: true, item: comEstoqueFinal(item) });
+});
+
+app.get('/api/bebidas/naoalcoolicas', (req, res) => {
+  const itens = loadBebidasNaoAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+app.post('/api/bebidas/naoalcoolicas/novo', (req, res) => {
+  const { codigo, nome, tamanho, grupo, estoqueInicial } = req.body;
+  const codigoLimpo = String(codigo || '').trim();
+  const nomeLimpo = String(nome || '').trim();
+  if (!codigoLimpo || !nomeLimpo) return res.status(400).json({ error: 'Código e nome são obrigatórios.' });
+
+  const itens = loadBebidasNaoAlc();
+  if (itens.some(i => i.codigo === codigoLimpo)) {
+    return res.status(409).json({ error: `Já existe um item cadastrado com o código ${codigoLimpo}.` });
+  }
+
+  const novo = {
+    codigo: codigoLimpo,
+    nome: nomeLimpo,
+    tamanho: String(tamanho || 'UN').trim(),
+    grupo: String(grupo || ''),
+    estoqueInicial: +estoqueInicial || 0,
+    vendas: 0,
+    entradas: 0,
+    auditoria: null,
+    observacao: ''
+  };
+  itens.push(novo);
+  saveBebidasNaoAlc(itens);
+  res.json({ ok: true, item: comEstoqueFinal(novo) });
+});
+
+app.get('/api/bebidas/naoalcoolicas/auditoria', (req, res) => {
+  const itens = loadBebidasNaoAlc().map(comEstoqueFinal)
+    .filter(it => it.auditoria !== null && it.auditoria !== undefined && +it.auditoria !== it.estoqueFinal)
+    .map(it => ({ ...it, diferenca: +((+it.auditoria) - it.estoqueFinal).toFixed(3) }))
+    .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  res.json({ itens });
+});
+
+const CAMPOS_TEXTO_BEBIDA_NAOALC = ['observacao', 'nome', 'tamanho', 'grupo'];
+app.post('/api/bebidas/naoalcoolicas/atualizar', (req, res) => {
+  const { codigo, campo, valor } = req.body;
+  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_BEBIDA_NAOALC].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho|grupo) são obrigatórios.' });
+  }
+  const itens = loadBebidasNaoAlc();
+  const item = itens.find(i => i.codigo === codigo);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
+  if (CAMPOS_TEXTO_BEBIDA_NAOALC.includes(campo)) {
+    item[campo] = String(valor || '');
+  } else {
+    item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+  }
+  saveBebidasNaoAlc(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
 
