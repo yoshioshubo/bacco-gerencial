@@ -1587,23 +1587,26 @@ function apurarVendasVinhosDoMes(texto) {
   }, null, 2));
 }
 
-function extrairItensVinho(texto) {
+// Extrai itens vendidos de um (ou mais) GRUPO(s) do PDV. `matchGrupo` recebe o nome do
+// GRUPO já normalizado (maiúsculo, sem acento) e devolve true/false se deve capturar.
+function extrairItensPorGrupo(texto, matchGrupo) {
   const linhas = texto.split('\n');
   const itens = [];
   let lastDate = null;
   let grupoAtual = null;
+  let grupoAtualNorm = null;
 
   for (let i = 0; i < linhas.length; i++) {
     const line = linhas[i].trim();
 
     const gm = line.match(/^GRUPO:\s*(.+)$/i);
-    if (gm) { grupoAtual = gm[1].trim().toUpperCase(); continue; }
+    if (gm) { grupoAtual = gm[1].trim().toUpperCase(); grupoAtualNorm = normalizaTexto(grupoAtual); continue; }
 
     const dm = line.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (dm) { lastDate = new Date(+dm[3], +dm[2] - 1, +dm[1]); continue; }
 
     const qtdR = (line.match(/R\$/g) || []).length;
-    if (grupoAtual === 'VINHOS' && line.startsWith('R$') && qtdR >= 4) {
+    if (grupoAtualNorm && matchGrupo(grupoAtualNorm) && line.startsWith('R$') && qtdR >= 4) {
       // Junta as linhas anteriores (até 3) para formar o nome do item, parando em limites conhecidos
       let nomeParts = [];
       let j = i - 1;
@@ -1642,6 +1645,45 @@ function extrairItensVinho(texto) {
   }
   return itens;
 }
+
+function extrairItensVinho(texto) {
+  return extrairItensPorGrupo(texto, g => g === 'VINHOS');
+}
+
+app.get('/api/debug-grupos-bebidas', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    if (!arquivosDoMes.length) return res.json({ erro: 'Nenhum PDF de vendas encontrado para 2026-07.' });
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+
+    const linhas = texto.split('\n');
+    const gruposEncontrados = new Set();
+    for (const l of linhas) {
+      const gm = l.trim().match(/^GRUPO:\s*(.+)$/i);
+      if (gm) gruposEncontrados.add(gm[1].trim().toUpperCase());
+    }
+
+    // amostra de itens capturados para grupos que contenham "ALCOOL"
+    const itensAlcool = extrairItensPorGrupo(texto, g => normalizaTexto(g).includes('ALCOOL') && !normalizaTexto(g).includes('NAO'));
+    const itensNaoAlcool = extrairItensPorGrupo(texto, g => normalizaTexto(g).includes('ALCOOL') && normalizaTexto(g).includes('NAO'));
+
+    res.json({
+      arquivo: arquivo.name,
+      grupos: [...gruposEncontrados].sort(),
+      amostraAlcoolica: itensAlcool.slice(0, 30),
+      totalAlcoolica: itensAlcool.length,
+      amostraNaoAlcoolica: itensNaoAlcool.slice(0, 30),
+      totalNaoAlcoolica: itensNaoAlcool.length
+    });
+  } catch(e) {
+    res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
+  }
+});
 
 app.get('/api/debug-apurar-vinhos', async (req, res) => {
   try {
