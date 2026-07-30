@@ -1811,19 +1811,22 @@ app.get('/api/debug-grupos-bebidas', async (req, res) => {
     const itensAlcool = extrairItensPorGrupo(texto, g => gruposAlvo.includes(g));
     const itensNaoAlcool = extrairItensPorGrupo(texto, g => normalizaTexto(g).includes('ALCOOL') && normalizaTexto(g).includes('NAO'));
 
-    const porNome = {};
-    for (const it of itensAlcool) {
-      if (!porNome[it.nome]) porNome[it.nome] = 0;
-      porNome[it.nome] += it.qtd;
-    }
-    const unicos = Object.entries(porNome).map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd) })).sort((a,b) => a.nome.localeCompare(b.nome));
+    const agrupa = (lista) => {
+      const porNome = {};
+      for (const it of lista) {
+        if (!porNome[it.nome]) porNome[it.nome] = 0;
+        porNome[it.nome] += it.qtd;
+      }
+      return Object.entries(porNome).map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd) })).sort((a,b) => a.nome.localeCompare(b.nome));
+    };
 
     res.json({
       arquivo: arquivo.name,
       grupos: [...gruposEncontrados].sort(),
       totalAlcoolica: itensAlcool.length,
-      produtosUnicos: unicos,
-      totalNaoAlcoolica: itensNaoAlcool.length
+      produtosUnicos: agrupa(itensAlcool),
+      totalNaoAlcoolica: itensNaoAlcool.length,
+      produtosUnicosNaoAlcool: agrupa(itensNaoAlcool)
     });
   } catch(e) {
     res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
