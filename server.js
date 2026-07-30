@@ -396,7 +396,9 @@ function loadBebidasAlc() {
 }
 function saveBebidasAlc(itens) { fs.writeFileSync(BEBIDAS_ALC_FILE, JSON.stringify(itens, null, 2)); }
 
-const STOPWORDS_BEBIDA_ALC = new Set(['DE','DO','DA','DOS','DAS','COM','DOSE','ON','THE','ROCKS','LATA','LONG','NECK','CERVEJA','CERV','GARRAFA','750ML','375ML']);
+// LATA/LONG/NECK NÃO entram como stopword aqui — são justamente o que diferencia
+// "Corona Lata" de "Corona Long Neck" no catálogo, então precisam contar no score de match.
+const STOPWORDS_BEBIDA_ALC = new Set(['DE','DO','DA','DOS','DAS','COM','DOSE','ON','THE','ROCKS','CERVEJA','CERV','GARRAFA','750ML','375ML']);
 const GRUPOS_BEBIDA_ALC = ['BEBIDA ALCOOLICA', 'CERVEJA', 'WHISKIE', 'COQUETEIS'];
 
 // Apura as vendas de bebidas alcoólicas do mês, mesma lógica usada para os vinhos:
@@ -1658,7 +1660,8 @@ function palavrasSignificativas(nome) {
 // significativas em comum, evitando duplicar a mesma venda em itens que compartilham marca/prefixo.
 // Retorna { codigo: quantidadeTotalVendida }.
 function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
-  const sigFn = (nome) => normalizaTexto(nome).split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p));
+  // Normaliza a abreviação do PDV "LNECK" para "LONG NECK" para casar com o nome do catálogo
+  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p));
   const palavrasPorItem = itensEstoque.map(it => sigFn(it.nome));
   const porCodigo = {};
   for (const it of itensPdv) {
