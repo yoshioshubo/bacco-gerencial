@@ -429,13 +429,15 @@ const SEED_BEBIDAS_NAOALC_RAW = [
   ['NA007', 'Red Bull Tradicional', 'Lata', 0],
   ['NA008', 'Soda Italiana Sabor Brasileiro', 'Copo', 0],
   ['NA009', 'Like a Virgin', 'Dose', 0],
-  ['NA010', 'CAED Água Com Gás', 'Garrafa', 0],
-  ['NA011', 'CAED Água Sem Gás', 'Garrafa', 0],
-  ['NA012', 'CAED Coca-Cola Comum', 'Lata', 0],
-  ['NA013', 'CAED Coca-Cola Zero', 'Lata', 0],
-  ['NA014', 'CAED Guaraná Comum', 'Lata', 0],
-  ['NA015', 'CAED Guaraná Zero', 'Lata', 0]
+  ['NA012', 'Coca-Cola Comum', 'Lata', 0],
+  ['NA014', 'Guaraná Comum', 'Lata', 0],
+  ['NA015', 'Guaraná Zero', 'Lata', 0]
 ];
+
+// "CAED" não é um produto — é só como o PDV rotula bebidas cobradas dentro do pacote de evento.
+// NA010/NA011 (Água Com/Sem Gás "CAED") e NA013 (Coca-Cola Zero "CAED") eram duplicatas dos
+// itens NA001/NA002/NA003 e foram removidas uma única vez; a venda cai no item base normal.
+const REMOVIDOS_BEBIDAS_NAOALC = ['NA010', 'NA011', 'NA013'];
 
 const GRUPO_POR_CODIGO_NAOALC = {
   NA001: 'Água', NA002: 'Água', NA010: 'Água', NA011: 'Água',
@@ -453,21 +455,50 @@ function seedItensBebidasNaoAlc(lista) {
 
 function loadBebidasNaoAlc() {
   const existeArquivo = fs.existsSync(BEBIDAS_NAOALC_FILE);
-  const itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_NAOALC_FILE, 'utf8')) : seedItensBebidasNaoAlc(SEED_BEBIDAS_NAOALC_RAW);
+  let itens = existeArquivo ? JSON.parse(fs.readFileSync(BEBIDAS_NAOALC_FILE, 'utf8')) : seedItensBebidasNaoAlc(SEED_BEBIDAS_NAOALC_RAW);
   let mudou = !existeArquivo;
   for (const item of itens) {
     if (item.grupo === undefined) { item.grupo = GRUPO_POR_CODIGO_NAOALC[item.codigo] || ''; mudou = true; }
   }
+
+  // Remove uma única vez os itens "CAED" duplicados (não é um produto — é só o rótulo de cobrança
+  // do PDV para bebidas dentro do pacote de evento; a venda cai no item base normal)
+  const migracoes = fs.existsSync(BEBIDAS_MIGRACOES_FILE)
+    ? JSON.parse(fs.readFileSync(BEBIDAS_MIGRACOES_FILE, 'utf8'))
+    : { aplicadas: [] };
+  let migracoesMudaram = false;
+  for (const codigo of REMOVIDOS_BEBIDAS_NAOALC) {
+    const id = `remover-naoalc-${codigo}`;
+    if (migracoes.aplicadas.includes(id)) continue;
+    const antes = itens.length;
+    itens = itens.filter(i => i.codigo !== codigo);
+    if (itens.length !== antes) mudou = true;
+    migracoes.aplicadas.push(id);
+    migracoesMudaram = true;
+  }
+  if (migracoesMudaram) fs.writeFileSync(BEBIDAS_MIGRACOES_FILE, JSON.stringify(migracoes, null, 2));
+
   if (mudou) fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.stringify(itens, null, 2));
   return itens;
 }
 function saveBebidasNaoAlc(itens) { fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.stringify(itens, null, 2)); }
 
 // COM/SEM NÃO entram como stopword — diferenciam "Água Com Gás" de "Água Sem Gás"
-const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA']);
+const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA','CAED']);
+
+// O PDV lança as bebidas do pacote CAED com nomes abreviados ("Agua C.", "Agua S.", "Guarana Com",
+// "Guarana Zer") — expandimos para o nome completo antes de casar com o catálogo.
+function normalizaAbreviacaoNaoAlc(nome) {
+  return nome
+    .replace(/\bAGUA C\.?$/, 'AGUA COM GAS')
+    .replace(/\bAGUA S\.?$/, 'AGUA SEM GAS')
+    .replace(/\bGUARANA COM$/, 'GUARANA COMUM')
+    .replace(/\bGUARANA ZER$/, 'GUARANA ZERO');
+}
 
 function apurarVendasBebidasNaoAlcDoMes(texto) {
-  const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS');
+  const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS')
+    .map(it => ({ ...it, nome: normalizaAbreviacaoNaoAlc(it.nome) }));
   const itensEstoque = loadBebidasNaoAlc();
   const porCodigo = casarItensPorPalavras(itensPdv, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
   for (const item of itensEstoque) {
