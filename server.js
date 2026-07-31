@@ -506,7 +506,7 @@ function normalizaAbreviacaoNaoAlc(nome) {
   return nome
     .replace(/\bAGUA C\.?$/, 'AGUA COM GAS')
     .replace(/\bAGUA S\.?$/, 'AGUA SEM GAS')
-    .replace(/\bGUARANA COM$/, 'GUARANA COMUM')
+    .replace(/\bGUARANA COM$/, 'GUARANA')
     .replace(/\bGUARANA ZER$/, 'GUARANA ZERO');
 }
 
@@ -1779,8 +1779,9 @@ function palavrasSignificativas(nome) {
 // Retorna { codigo: quantidadeTotalVendida }.
 function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
   // Normaliza a abreviação do PDV "LNECK" para "LONG NECK" para casar com o nome do catálogo
-  // Ignora tokens puramente numéricos (ex: código de apto/comanda que às vezes vem na frente do nome)
-  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p) && !/^\d+$/.test(p));
+  // Ignora tokens puramente numéricos (ex: código de apto/comanda que às vezes vem na frente do nome).
+  // Hífen vira espaço para "Coca-Cola" tokenizar como COCA+COLA igual ao nome do PDV (sem hífen).
+  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').replace(/-/g, ' ').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p) && !/^\d+$/.test(p));
   const palavrasPorItem = itensEstoque.map(it => sigFn(it.nome));
   const porCodigo = {};
   for (const it of itensPdv) {
