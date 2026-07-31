@@ -497,8 +497,10 @@ function loadBebidasNaoAlc() {
 }
 function saveBebidasNaoAlc(itens) { fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.stringify(itens, null, 2)); }
 
-// COM/SEM NÃO entram como stopword — diferenciam "Água Com Gás" de "Água Sem Gás"
-const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA']);
+// COM/SEM NÃO entram como stopword — diferenciam "Água Com Gás" de "Água Sem Gás".
+// CAED entra como stopword — é só o rótulo de cobrança do pacote de evento, nunca faz parte do
+// nome do produto, e contá-la como palavra "significativa" só atrapalha o casamento por score.
+const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA','CAED']);
 
 // O PDV lança as bebidas do pacote CAED com nomes abreviados ("Agua C.", "Agua S.", "Guarana Com",
 // "Guarana Zer") — expandimos para o nome completo antes de casar com o catálogo.
