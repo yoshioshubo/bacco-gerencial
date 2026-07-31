@@ -461,6 +461,12 @@ function loadBebidasNaoAlc() {
     if (item.grupo === undefined) { item.grupo = GRUPO_POR_CODIGO_NAOALC[item.codigo] || ''; mudou = true; }
   }
 
+  // Mescla itens novos do catálogo que ainda não estão salvos (sem sobrescrever os já existentes/editados)
+  const codigosExistentes = new Set(itens.map(i => i.codigo));
+  for (const novo of seedItensBebidasNaoAlc(SEED_BEBIDAS_NAOALC_RAW)) {
+    if (!codigosExistentes.has(novo.codigo)) { itens.push(novo); mudou = true; }
+  }
+
   // Remove uma única vez os itens "CAED" duplicados (não é um produto — é só o rótulo de cobrança
   // do PDV para bebidas dentro do pacote de evento; a venda cai no item base normal)
   const migracoes = fs.existsSync(BEBIDAS_MIGRACOES_FILE)
@@ -1908,13 +1914,24 @@ app.get('/api/debug-grupos-bebidas', async (req, res) => {
       return Object.entries(porNome).map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd) })).sort((a,b) => a.nome.localeCompare(b.nome));
     };
 
+    // dump bruto (sem filtro de qtd/R$) da seção BEBIDAS NAO ALCOOLICAS, para conferir se o
+    // parser está descartando itens válidos
+    let dentro = false;
+    const linhasBrutasNaoAlcool = [];
+    for (const l of linhas) {
+      const gm = l.trim().match(/^GRUPO:\s*(.+)$/i);
+      if (gm) { dentro = normalizaTexto(gm[1]).includes('ALCOOL') && normalizaTexto(gm[1]).includes('NAO'); continue; }
+      if (dentro && l.trim()) linhasBrutasNaoAlcool.push(l.trim());
+    }
+
     res.json({
       arquivo: arquivo.name,
       grupos: [...gruposEncontrados].sort(),
       totalAlcoolica: itensAlcool.length,
       produtosUnicos: agrupa(itensAlcool),
       totalNaoAlcoolica: itensNaoAlcool.length,
-      produtosUnicosNaoAlcool: agrupa(itensNaoAlcool)
+      produtosUnicosNaoAlcool: agrupa(itensNaoAlcool),
+      linhasBrutasNaoAlcool
     });
   } catch(e) {
     res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
