@@ -1974,6 +1974,53 @@ app.get('/api/debug-grupos-bebidas', async (req, res) => {
   }
 });
 
+app.get('/api/debug-auditoria-naoalc', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+    const linhas = texto.split('\n');
+
+    // soma extraída pelo nosso parser (todos os itens do grupo, incluindo CAED)
+    const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS');
+    const somaExtraida = itensPdv.reduce((s, it) => s + it.qtd, 0);
+
+    // soma declarada pelo próprio PDV (linha "TOTAL DO DIA:" logo após cada bloco de item, dentro do grupo)
+    let dentro = false;
+    let somaDeclarada = 0;
+    for (const lOrig of linhas) {
+      const l = lOrig.trim();
+      const gm = l.match(/^GRUPO:\s*(.+)$/i);
+      if (gm) { dentro = normalizaTexto(gm[1]).includes('ALCOOL') && normalizaTexto(gm[1]).includes('NAO'); continue; }
+      if (!dentro) continue;
+      const tm = l.match(/TOTAL DO DIA:(\d+(?:,\d+)?)/);
+      if (tm) somaDeclarada += parseFloat(tm[1].replace(',', '.'));
+    }
+
+    // itens do catálogo e soma capturada por casamento de palavras (o que efetivamente vira "vendas")
+    const itensPdvNorm = itensPdv.map(it => ({ ...it, nome: normalizaAbreviacaoNaoAlc(it.nome) }));
+    const itensEstoque = loadBebidasNaoAlc();
+    const porCodigo = casarItensPorPalavras(itensPdvNorm, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
+    const somaCasada = Object.values(porCodigo).reduce((s, v) => s + v, 0);
+
+    res.json({
+      arquivo: arquivo.name,
+      somaExtraidaPeloParser: Math.round(somaExtraida * 100) / 100,
+      somaDeclaradaPeloPDV: Math.round(somaDeclarada * 100) / 100,
+      somaCasadaComCatalogo: somaCasada,
+      totalItensExtraidos: itensPdv.length,
+      diferencaExtraidoVsDeclarado: Math.round((somaDeclarada - somaExtraida) * 100) / 100,
+      diferencaCasadoVsExtraido: Math.round((somaExtraida - somaCasada) * 100) / 100
+    });
+  } catch(e) {
+    res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
+  }
+});
+
 app.get('/api/debug-apurar-vinhos', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
