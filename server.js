@@ -1906,7 +1906,7 @@ function extrairItensPorGrupo(texto, matchGrupo) {
         if (qtd !== null && qtd > 0 && qtd <= 50 && lastDate) {
           // Tudo em GRUPO:VINHOS que não é vendido em taça é garrafa (vendida pelo nome/marca do vinho)
           const tipo = /TA[ÇC]A/.test(nome) ? 'Taça' : 'Garrafa';
-          itens.push({ data: lastDate, nome, tipo, qtd });
+          itens.push({ data: lastDate, nome, tipo, qtd, linha: i });
         }
       }
     }
@@ -1942,6 +1942,58 @@ app.get('/api/debug-linhas-item-naoalc', async (req, res) => {
       somaQtd: Math.round(total * 100) / 100,
       itens: itensPdv.map(it => ({ data: it.data.toISOString().slice(0,10), qtd: it.qtd }))
     });
+  } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
+});
+
+app.get('/api/debug-reconciliar-naoalc', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+    const linhas = texto.split('\n');
+
+    const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS');
+    const porLinha = new Map(itensPdv.map(it => [it.linha, it]));
+
+    // Descobre em quais linhas o grupo está ativo, e localiza as linhas "TOTAL DO DIA:" dentro dele
+    let dentro = false;
+    let ultimoNome = null;
+    let ultimaLinhaTotal = -1;
+    const totalDeclaradoPorNome = {};
+    const totalExtraidoPorNome = {};
+
+    for (let i = 0; i < linhas.length; i++) {
+      const l = linhas[i].trim();
+      const gm = l.match(/^GRUPO:\s*(.+)$/i);
+      if (gm) { dentro = normalizaTexto(gm[1]).includes('ALCOOL') && normalizaTexto(gm[1]).includes('NAO'); continue; }
+      if (!dentro) continue;
+
+      const item = porLinha.get(i);
+      if (item) {
+        ultimoNome = item.nome;
+        totalExtraidoPorNome[item.nome] = (totalExtraidoPorNome[item.nome] || 0) + item.qtd;
+        continue;
+      }
+      const tm = l.match(/TOTAL DO DIA:(\d+(?:,\d+)?)/);
+      if (tm && ultimoNome && i > ultimaLinhaTotal) {
+        totalDeclaradoPorNome[ultimoNome] = (totalDeclaradoPorNome[ultimoNome] || 0) + parseFloat(tm[1].replace(',', '.'));
+        ultimaLinhaTotal = i;
+        ultimoNome = null;
+      }
+    }
+
+    const todosNomes = new Set([...Object.keys(totalDeclaradoPorNome), ...Object.keys(totalExtraidoPorNome)]);
+    const comparativo = [...todosNomes].map(nome => {
+      const declarado = Math.round((totalDeclaradoPorNome[nome] || 0) * 100) / 100;
+      const extraido = Math.round((totalExtraidoPorNome[nome] || 0) * 100) / 100;
+      return { nome, declarado, extraido, diferenca: Math.round((extraido - declarado) * 100) / 100 };
+    }).filter(r => Math.abs(r.diferenca) > 0.01).sort((a,b) => Math.abs(b.diferenca) - Math.abs(a.diferenca));
+
+    res.json({ arquivo: arquivo.name, comparativo });
   } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
 });
 
