@@ -1921,6 +1921,30 @@ function extrairItensVinho(texto) {
   return extrairItensPorGrupo(texto, g => g === 'VINHOS' || g === 'BEBIDA ALCOOLICA');
 }
 
+app.get('/api/debug-linhas-item-naoalc', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+
+    const alvo = normalizaTexto(req.query.nome || 'AGUA COM');
+    const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS')
+      .filter(it => normalizaTexto(it.nome) === alvo);
+    const total = itensPdv.reduce((s, it) => s + it.qtd, 0);
+    res.json({
+      arquivo: arquivo.name,
+      nomeFiltrado: alvo,
+      totalOcorrencias: itensPdv.length,
+      somaQtd: Math.round(total * 100) / 100,
+      itens: itensPdv.map(it => ({ data: it.data.toISOString().slice(0,10), qtd: it.qtd }))
+    });
+  } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
+});
+
 app.get('/api/debug-grupos-bebidas', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
