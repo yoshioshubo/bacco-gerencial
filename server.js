@@ -419,9 +419,13 @@ function apurarVendasBebidasAlcDoMes(texto) {
 // Catálogo montado a partir dos itens vendidos em julho/2026 (GRUPO:BEBIDAS NAO ALCOOLICAS),
 // consolidando entradas repetidas com prefixo numérico de apto/comanda (ex: "0612 Coca Cola Zero")
 // no mesmo item base.
+// A ordem importa: quando duas variações do mesmo produto têm o mesmo score de palavras em comum
+// (ex: "Coca-Cola" vs "Coca-Cola Zero", ambos contêm COCA+COLA), o casamento por palavras desempata
+// pela ordem do catálogo — por isso a versão "comum"/simples vem sempre antes da variação (Zero/Diet).
 const SEED_BEBIDAS_NAOALC_RAW = [
   ['NA001', 'Água Sem Gás', 'Garrafa', 0],
   ['NA002', 'Água Com Gás', 'Garrafa', 0],
+  ['NA020', 'Coca-Cola', 'Lata', 0],
   ['NA003', 'Coca-Cola Zero', 'Lata', 0],
   ['NA004', 'Suco de Frutas', 'Copo', 0],
   ['NA005', 'Shot de Limão', 'Dose', 0],
@@ -432,6 +436,7 @@ const SEED_BEBIDAS_NAOALC_RAW = [
   ['NA016', 'Guaraná', 'Lata', 0],
   ['NA017', 'Guaraná Diet', 'Lata', 0],
   ['NA018', 'Tônica', 'Lata', 0],
+  ['NA021', 'Tônica Diet', 'Lata', 0],
   ['NA019', 'Café Expresso Duplo', 'Xícara', 0]
 ];
 
@@ -442,7 +447,8 @@ const REMOVIDOS_BEBIDAS_NAOALC = ['NA010', 'NA011', 'NA012', 'NA013', 'NA014', '
 
 const GRUPO_POR_CODIGO_NAOALC = {
   NA001: 'Água', NA002: 'Água',
-  NA003: 'Refrigerante', NA007: 'Refrigerante', NA008: 'Refrigerante', NA016: 'Refrigerante', NA017: 'Refrigerante', NA018: 'Refrigerante',
+  NA003: 'Refrigerante', NA007: 'Refrigerante', NA008: 'Refrigerante', NA016: 'Refrigerante', NA017: 'Refrigerante',
+  NA018: 'Refrigerante', NA020: 'Refrigerante', NA021: 'Refrigerante',
   NA004: 'Suco',
   NA005: 'Outros', NA006: 'Outros', NA009: 'Outros', NA019: 'Outros'
 };
@@ -1835,6 +1841,8 @@ function extrairItensPorGrupo(texto, matchGrupo) {
     if (dm) { lastDate = new Date(+dm[3], +dm[2] - 1, +dm[1]); continue; }
 
     const qtdR = (line.match(/R\$/g) || []).length;
+    let nome = null;
+
     if (grupoAtualNorm && matchGrupo(grupoAtualNorm) && line.startsWith('R$') && qtdR >= 4) {
       // Junta as linhas anteriores (até 3) para formar o nome do item, parando em limites conhecidos
       let nomeParts = [];
@@ -1851,9 +1859,18 @@ function extrairItensPorGrupo(texto, matchGrupo) {
         nomeParts.unshift(prev);
         j--;
       }
-      let nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+      nome = nomeParts.join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
       // Corrige truncamento de origem: a impressão do PDV corta "VINHO BRANCO" em "VINHO BRANC"
       nome = nome.replace(/VINHO BRANC$/, 'VINHO BRANCO');
+    } else if (grupoAtualNorm && matchGrupo(grupoAtualNorm) && !line.startsWith('R$') && qtdR >= 4 && line.includes('R$')) {
+      // Formato de linha única: nomes curtos (ex: "COCA COLA", "GUARANA", "TONICA") ficam colados
+      // ao preço na mesma linha, sem quebra — ex: "1980Mesa 3Posição 1COCA COLAR$ 9,00..."
+      const prefixo = line.slice(0, line.indexOf('R$'));
+      const m = prefixo.match(/(?:Posi[çc][ãa]o\s*\d+|UH\s*-?\s*\d+|Mesa\s*\d+)\s*([A-ZÀ-Ú][A-ZÀ-Ú.\s]*)$/i);
+      if (m) nome = m[1].trim().toUpperCase();
+    }
+
+    if (nome) {
       // Descarta nomes sem nenhuma letra (fragmento numérico/monetário capturado por engano,
       // geralmente por quebra de página que atropela a estrutura normal da linha)
       const temLetra = /[A-ZÀ-Ú]/.test(nome);
