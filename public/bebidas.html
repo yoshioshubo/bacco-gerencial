@@ -305,6 +305,7 @@
       <button class="subtab active" id="btnNALista" onclick="trocarViewNA('lista')">Lista</button>
       <input type="text" id="buscaNA" placeholder="🔍 Pesquisar item…" oninput="renderizarNA()"
         style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;width:200px">
+      <button class="subtab" id="btnFiltroCaed" onclick="toggleFiltroCaed()" style="border-color:var(--blue)">🎪 Só CAED</button>
       <button class="subtab" id="btnNAAuditoria" onclick="trocarViewNA('auditoria')" style="border-color:var(--red);margin-left:auto">⚠ Auditoria</button>
     </div>
 
@@ -327,6 +328,7 @@
             <th>Tamanho</th>
             <th class="num">Estoque Inicial</th>
             <th class="num">Vendas</th>
+            <th class="num" title="Parte das vendas cobrada via pacote CAED (já somada em Vendas)">CAED</th>
             <th class="num">Entradas</th>
             <th class="num">Estoque Final</th>
             <th class="num">Auditoria</th>
@@ -764,6 +766,13 @@ let itensNACache = [];
 let ordemCampoNA = 'nome', ordemAscNA = true;
 let viewAtualNA = 'lista';
 let modoEdicaoNA = false;
+let filtroCaedNA = false;
+
+function toggleFiltroCaed() {
+  filtroCaedNA = !filtroCaedNA;
+  document.getElementById('btnFiltroCaed').classList.toggle('active', filtroCaedNA);
+  renderizarNA();
+}
 
 function toggleEdicaoNA() {
   modoEdicaoNA = !modoEdicaoNA;
@@ -842,7 +851,8 @@ function ordenarPorNA(campo) {
 
 function renderizarNA() {
   const termoBusca = (document.getElementById('buscaNA')?.value || '').trim().toLowerCase();
-  const filtrados = termoBusca ? itensNACache.filter(it => it.nome.toLowerCase().includes(termoBusca)) : itensNACache;
+  let filtrados = termoBusca ? itensNACache.filter(it => it.nome.toLowerCase().includes(termoBusca)) : itensNACache;
+  if (filtroCaedNA) filtrados = filtrados.filter(it => (it.vendasCaed || 0) !== 0);
 
   const itens = [...filtrados].sort((a,b) => {
     const r = String(a[ordemCampoNA]).localeCompare(String(b[ordemCampoNA]), 'pt-BR', {numeric:true});
@@ -875,11 +885,13 @@ function renderizarNA() {
 
   thead.innerHTML = `<tr>
     <th>Código</th><th>Grupo</th><th onclick="ordenarPorNA('nome')">Item ↕</th><th>Tamanho</th>
-    <th class="num">Estoque Inicial</th><th class="num">Vendas</th><th class="num">Entradas</th>
-    <th class="num">Estoque Final</th><th class="num">Auditoria</th><th>Observação</th></tr>`;
+    <th class="num">Estoque Inicial</th><th class="num">Vendas</th>
+    <th class="num" title="Parte das vendas cobrada via pacote CAED (já somada em Vendas)">CAED</th>
+    <th class="num">Entradas</th><th class="num">Estoque Final</th><th class="num">Auditoria</th><th>Observação</th></tr>`;
 
-  document.getElementById('phSubNA').textContent = termoBusca
-    ? `${itens.length} de ${itensNACache.length} itens (filtrado por "${termoBusca}")`
+  const filtrosAtivos = [termoBusca && `"${termoBusca}"`, filtroCaedNA && 'só CAED'].filter(Boolean).join(', ');
+  document.getElementById('phSubNA').textContent = filtrosAtivos
+    ? `${itens.length} de ${itensNACache.length} itens (filtrado por ${filtrosAtivos})`
     : `${itens.length} itens cadastrados`;
   document.getElementById('rQtdNA').textContent = itensNACache.length;
   document.getElementById('rInicialNA').textContent = N(itensNACache.reduce((s,i)=>s+i.estoqueInicial,0));
@@ -889,7 +901,7 @@ function renderizarNA() {
   document.getElementById('rAuditadosNA').textContent = itensNACache.filter(i => i.auditoria !== null && i.auditoria !== undefined).length;
 
   if (!itens.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">${termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">${filtroCaedNA ? 'Nenhum item com venda CAED encontrado.' : (termoBusca ? 'Nenhum item encontrado para essa pesquisa.' : 'Nenhum item cadastrado.')}</td></tr>`;
     return;
   }
 
@@ -901,7 +913,7 @@ function renderizarNA() {
   for (const g of ORDEM_GRUPOS) {
     const doGrupo = itens.filter(it => (it.grupo || '') === g);
     if (!doGrupo.length) continue;
-    html += `<tr><td colspan="10" style="background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${LABEL_GRUPO[g]} (${doGrupo.length})</td></tr>`;
+    html += `<tr><td colspan="11" style="background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${LABEL_GRUPO[g]} (${doGrupo.length})</td></tr>`;
     html += doGrupo.map(it => linhaNA(it, OPCOES_GRUPO)).join('');
   }
   tbody.innerHTML = html;
@@ -931,6 +943,7 @@ function linhaNA(it, OPCOES_GRUPO) {
   const entradasCell = modoEdicaoNA
     ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizarNA('${it.codigo}','entradas',this.value)">`
     : N(it.entradas ?? 0);
+  const caedCell = (it.vendasCaed || 0) !== 0 ? `<span style="color:var(--blue)">${N(it.vendasCaed)}</span>` : '—';
 
   return `<tr>
     <td class="mono">${it.codigo}</td>
@@ -939,6 +952,7 @@ function linhaNA(it, OPCOES_GRUPO) {
     <td class="mono">${tamanhoCell}</td>
     <td class="num">${N(it.estoqueInicial)}</td>
     <td class="num">${vendasCell}</td>
+    <td class="num">${caedCell}</td>
     <td class="num">${entradasCell}</td>
     <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
     <td class="num">${auditoriaCell}</td>

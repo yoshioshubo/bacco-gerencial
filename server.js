@@ -437,18 +437,20 @@ const SEED_BEBIDAS_NAOALC_RAW = [
   ['NA017', 'Guaraná Diet', 'Lata', 0],
   ['NA018', 'Tônica', 'Lata', 0],
   ['NA021', 'Tônica Diet', 'Lata', 0],
-  ['NA019', 'Café Expresso Duplo', 'Xícara', 0]
+  ['NA019', 'Café Expresso Duplo', 'Xícara', 0],
+  ['NA022', 'Guaraná Zero', 'Lata', 0]
 ];
 
-// "CAED" não é um produto — é só como o PDV rotula bebidas cobradas dentro do pacote de evento
-// (lançadas a R$0,01, sem relação com o preço real). NA010-NA015 (versões "CAED" de água/coca/
-// guaraná) foram removidas — essas vendas são ignoradas, não entram em nenhum item do catálogo.
+// "CAED" é o rótulo do PDV para bebidas cobradas dentro do pacote de evento (lançadas a R$0,01) —
+// não é um produto à parte: a quantidade soma no item base correspondente (ex: CAED Coca-Cola Zero
+// soma em "Coca-Cola Zero"), mas é rastreada separadamente no campo vendasCaed para o filtro "só CAED".
+// NA010-NA015 eram duplicatas dos itens "CAED..." criadas por engano antes dessa lógica existir.
 const REMOVIDOS_BEBIDAS_NAOALC = ['NA010', 'NA011', 'NA012', 'NA013', 'NA014', 'NA015'];
 
 const GRUPO_POR_CODIGO_NAOALC = {
   NA001: 'Água', NA002: 'Água',
   NA003: 'Refrigerante', NA007: 'Refrigerante', NA008: 'Refrigerante', NA016: 'Refrigerante', NA017: 'Refrigerante',
-  NA018: 'Refrigerante', NA020: 'Refrigerante', NA021: 'Refrigerante',
+  NA018: 'Refrigerante', NA020: 'Refrigerante', NA021: 'Refrigerante', NA022: 'Refrigerante',
   NA004: 'Suco',
   NA005: 'Outros', NA006: 'Outros', NA009: 'Outros', NA019: 'Outros'
 };
@@ -456,7 +458,7 @@ const ORDEM_GRUPOS_NAOALC = ['Água', 'Refrigerante', 'Suco', 'Outros'];
 
 function seedItensBebidasNaoAlc(lista) {
   return lista.map(([codigo, nome, tamanho, estoqueInicial]) =>
-    ({ codigo, nome, tamanho, grupo: GRUPO_POR_CODIGO_NAOALC[codigo] || '', estoqueInicial, vendas: 0, entradas: 0, auditoria: null, observacao: '' }));
+    ({ codigo, nome, tamanho, grupo: GRUPO_POR_CODIGO_NAOALC[codigo] || '', estoqueInicial, vendas: 0, vendasCaed: 0, entradas: 0, auditoria: null, observacao: '' }));
 }
 
 function loadBebidasNaoAlc() {
@@ -498,16 +500,33 @@ function saveBebidasNaoAlc(itens) { fs.writeFileSync(BEBIDAS_NAOALC_FILE, JSON.s
 // COM/SEM NÃO entram como stopword — diferenciam "Água Com Gás" de "Água Sem Gás"
 const STOPWORDS_BEBIDA_NAOALC = new Set(['DE','DO','DA','DOS','DAS','DOSE','COPO','LATA','GARRAFA']);
 
-// Itens lançados sob o rótulo "CAED" (pacote de evento, cobrados a R$0,01) são ignorados por
-// completo — não são o produto real e não devem ser contados em nenhum item do catálogo.
+// O PDV lança as bebidas do pacote CAED com nomes abreviados ("Agua C.", "Agua S.", "Guarana Com",
+// "Guarana Zer") — expandimos para o nome completo antes de casar com o catálogo.
+function normalizaAbreviacaoNaoAlc(nome) {
+  return nome
+    .replace(/\bAGUA C\.?$/, 'AGUA COM GAS')
+    .replace(/\bAGUA S\.?$/, 'AGUA SEM GAS')
+    .replace(/\bGUARANA COM$/, 'GUARANA COMUM')
+    .replace(/\bGUARANA ZER$/, 'GUARANA ZERO');
+}
+
+// As vendas "CAED" (bebidas do pacote de evento, lançadas a R$0,01) somam no item base
+// correspondente (ex: CAED Coca-Cola Zero soma em Coca-Cola Zero), mas a parcela CAED também
+// fica registrada à parte em vendasCaed, para permitir o filtro "só CAED" no relatório.
 function apurarVendasBebidasNaoAlcDoMes(texto) {
   const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDAS NAO ALCOOLICAS')
-    .filter(it => !/CAED/.test(it.nome));
+    .map(it => ({ ...it, nome: normalizaAbreviacaoNaoAlc(it.nome) }));
   const itensEstoque = loadBebidasNaoAlc();
+
   const porCodigo = casarItensPorPalavras(itensPdv, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
+  const itensCaed = itensPdv.filter(it => /CAED/.test(it.nome));
+  const porCodigoCaed = casarItensPorPalavras(itensCaed, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
+
   for (const item of itensEstoque) {
     const qtdVendida = porCodigo[item.codigo] || 0;
+    const qtdCaed = porCodigoCaed[item.codigo] || 0;
     item.vendas = qtdVendida > 0 ? -Math.round(qtdVendida) : 0;
+    item.vendasCaed = qtdCaed > 0 ? -Math.round(qtdCaed) : 0;
   }
   saveBebidasNaoAlc(itensEstoque);
 }
