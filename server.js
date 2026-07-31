@@ -2007,6 +2007,24 @@ app.get('/api/debug-auditoria-naoalc', async (req, res) => {
     const porCodigo = casarItensPorPalavras(itensPdvNorm, itensEstoque, STOPWORDS_BEBIDA_NAOALC);
     const somaCasada = Object.values(porCodigo).reduce((s, v) => s + v, 0);
 
+    // agrupa por nome (já normalizado) para achar exatamente quais produtos estão inflando/faltando
+    const porNome = {};
+    for (const it of itensPdvNorm) {
+      if (!porNome[it.nome]) porNome[it.nome] = 0;
+      porNome[it.nome] += it.qtd;
+    }
+    const resumoPorNome = Object.entries(porNome)
+      .map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd * 100) / 100 }))
+      .sort((a,b) => b.qtd - a.qtd);
+
+    // quais desses nomes NÃO casaram com nenhum item do catálogo (score insuficiente)
+    const nomesQueCasaram = new Set();
+    for (const it of itensPdvNorm) {
+      const testeUnico = casarItensPorPalavras([it], itensEstoque, STOPWORDS_BEBIDA_NAOALC);
+      if (Object.keys(testeUnico).length) nomesQueCasaram.add(it.nome);
+    }
+    const naoCasados = resumoPorNome.filter(r => !nomesQueCasaram.has(r.nome));
+
     res.json({
       arquivo: arquivo.name,
       somaExtraidaPeloParser: Math.round(somaExtraida * 100) / 100,
@@ -2014,7 +2032,9 @@ app.get('/api/debug-auditoria-naoalc', async (req, res) => {
       somaCasadaComCatalogo: somaCasada,
       totalItensExtraidos: itensPdv.length,
       diferencaExtraidoVsDeclarado: Math.round((somaDeclarada - somaExtraida) * 100) / 100,
-      diferencaCasadoVsExtraido: Math.round((somaExtraida - somaCasada) * 100) / 100
+      diferencaCasadoVsExtraido: Math.round((somaExtraida - somaCasada) * 100) / 100,
+      resumoPorNome,
+      naoCasados
     });
   } catch(e) {
     res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
