@@ -154,6 +154,28 @@ const ENTRADAS_INICIAIS_MIGRACAO = [
   { id: 'entrada-N005-200244-2026-07', codigo: 'N005',  delta: 3 } // Tantehue Carmenère já cadastrado
 ];
 
+// Entradas de julho/2026 conferidas pelas NFs reais da Salut Distribuidora (NF 000.013.398 de
+// 10/07 e NF 000.013.431 de 17/07 — as únicas 2 notas de vinho de julho). Ao contrário do array
+// acima (que soma um delta), esta migração SUBSTITUI o campo Entradas pelo valor exato da NF,
+// eliminando qualquer lançamento manual/estimado anterior para esses itens (evita duplicidade).
+const ENTRADAS_NF_JULHO_2026 = [
+  { codigo: '06020045', valor: 3 },  // NF 398 — Bons Ventos Tinto 750ml
+  { codigo: '06020043', valor: 2 },  // NF 398 — Bons Ventos Tinto 375ml
+  { codigo: '14004',    valor: 3 },  // NF 398 — Tarapacá Reserva 750ml
+  { codigo: 'N005',     valor: 6 },  // NF 398 (3) + NF 431 (3) — Tantehue Carmenère 750ml
+  { codigo: 'VCC0003',  valor: 3 },  // NF 398 — Cordero Cabernet Sauvignon 750ml
+  { codigo: 'WC0109',   valor: 3 },  // NF 398 — Cordero Malbec 750ml
+  { codigo: 'N004',     valor: 3 },  // NF 431 — Cartuxa EA Tinto 750ml
+  { codigo: 'N009',     valor: 2 },  // NF 431 — Cartuxa EA Trincadeira 750ml
+  { codigo: 'N008',     valor: 2 },  // NF 431 — Cartuxa EA Aragonez 750ml
+  { codigo: 'N007',     valor: 2 },  // NF 431 — Cartuxa EA Alicante Bouschet 750ml
+  { codigo: 'G107',     valor: 3 },  // NF 431 — Bons Ventos Magnum 1,5L
+  { codigo: 'N001',     valor: 3 },  // NF 431 — Montepulciano d'Abruzzo 750ml (Le Casine)
+  { codigo: 'N003',     valor: 2 },  // NF 431 — Le Casine Chianti 750ml
+  { codigo: 'N002',     valor: 3 },  // NF 431 — Codici Primitivo 750ml
+  { codigo: 'N006',     valor: 3 }   // NF 431 — Santa Helena Cabernet Sauvignon 375ml
+];
+
 // Contagem física de 28/07/2026 (Contagem_Consolidada_Vinhos.pdf) — aplicada uma única vez no
 // campo Auditoria; o usuário pode sobrescrever livremente depois com a contagem real do dia 31
 const AUDITORIA_28_07_2026 = [
@@ -291,6 +313,17 @@ function loadVinhos() {
     const item = itens.find(i => i.codigo === m.codigo);
     if (item) { item.entradas = +((item.entradas || 0) + m.delta).toFixed(3); mudou = true; }
     migracoes.aplicadas.push(m.id);
+    migracoesMudaram = true;
+  }
+
+  // Substitui (não soma) o campo Entradas pelos valores conferidos nas NFs reais de julho/2026 —
+  // aplicado uma única vez, descartando qualquer entrada lançada antes para esses itens
+  for (const e of ENTRADAS_NF_JULHO_2026) {
+    const id = `entrada-nf-julho-2026-${e.codigo}`;
+    if (migracoes.aplicadas.includes(id)) continue;
+    const item = itens.find(i => i.codigo === e.codigo);
+    if (item) { item.entradas = e.valor; mudou = true; }
+    migracoes.aplicadas.push(id);
     migracoesMudaram = true;
   }
 
