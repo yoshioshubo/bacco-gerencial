@@ -1846,6 +1846,22 @@ function apurarVendasVinhosDoMes(texto) {
 
 // Extrai itens vendidos de um (ou mais) GRUPO(s) do PDV. `matchGrupo` recebe o nome do
 // GRUPO já normalizado (maiúsculo, sem acento) e devolve true/false se deve capturar.
+// Preço e QTD vêm concatenados sem separador no PDV (ex: "0,012,00" = preço R$0,01 + qtd 2,00).
+// Regex genérica pegando "o último número válido" falha quando o preço é curto (ex: R$0,01 dos
+// itens CAED): "0,01"+"2,00" vira erroneamente "012,00"=12. Em vez disso, tenta cada ponto de
+// corte possível até achar dois números monetários válidos e completos (preço + qtd) — só há um
+// corte estruturalmente válido, então isso elimina a ambiguidade.
+function extraiQtdDoSegmentoConcatenado(seg) {
+  const RE_MONETARIO = /^\d{1,3}(?:\.\d{3})*,\d{2}$/;
+  for (let i = 1; i < seg.length; i++) {
+    const esquerda = seg.slice(0, i), direita = seg.slice(i);
+    if (RE_MONETARIO.test(esquerda) && RE_MONETARIO.test(direita)) {
+      return parseFloat(direita.replace(/\./g,'').replace(',','.'));
+    }
+  }
+  return null;
+}
+
 function extrairItensPorGrupo(texto, matchGrupo) {
   const linhas = texto.split('\n');
   const itens = [];
@@ -1897,11 +1913,8 @@ function extrairItensPorGrupo(texto, matchGrupo) {
       // geralmente por quebra de página que atropela a estrutura normal da linha)
       const temLetra = /[A-ZÀ-Ú]/.test(nome);
       if (nome && temLetra) {
-        // Preço e QTD vêm concatenados sem separador (ex: "R$ 29,001,00"); QTD é sempre o último
-        // número válido "d{2}" nesse trecho — o preço nunca ancora corretamente por causa da ambiguidade
-        const primeiroSeg = line.split('R$')[1] || '';
-        const matches = [...primeiroSeg.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g)];
-        const qtd = matches.length ? parseFloat(matches[matches.length - 1][0].replace(/\./g,'').replace(',','.')) : null;
+        const primeiroSeg = (line.split('R$')[1] || '').trim();
+        const qtd = extraiQtdDoSegmentoConcatenado(primeiroSeg);
         // Sanity check: nenhuma venda unitária de vinho passa de algumas dezenas de unidades
         if (qtd !== null && qtd > 0 && qtd <= 50 && lastDate) {
           // Tudo em GRUPO:VINHOS que não é vendido em taça é garrafa (vendida pelo nome/marca do vinho)
