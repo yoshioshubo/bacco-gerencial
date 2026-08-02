@@ -21,6 +21,7 @@ const BEBIDAS_TACA_FILE = path.join(DATA_DIR, 'bebidas-vinhos-taca.json');
 const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.json');
 const BEBIDAS_ALC_FILE = path.join(DATA_DIR, 'bebidas-alcoolicas.json');
 const BEBIDAS_NAOALC_FILE = path.join(DATA_DIR, 'bebidas-nao-alcoolicas.json');
+const BEBIDAS_FECHAMENTOS_FILE = path.join(DATA_DIR, 'bebidas-fechamentos.json');
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -2326,10 +2327,73 @@ function loadTacas() {
   catch { return { tacaTinto: 0, tacaBranco: 0, atualizadoEm: null }; }
 }
 
+// ── Fechamento mensal de estoque (Vinhos / Alcoólicas / Não Alcoólicas) ──────────
+// Cada categoria guarda um "snapshot" congelado por mês fechado (mesKey "AAAA-MM"). O mês
+// corrente nunca fica salvo aqui — ele é sempre a base de dados "viva" (BEBIDAS_*_FILE).
+function loadFechamentos() {
+  try { return JSON.parse(fs.readFileSync(BEBIDAS_FECHAMENTOS_FILE, 'utf8')); }
+  catch { return { vinhos: {}, alcoolicas: {}, naoalcoolicas: {} }; }
+}
+function saveFechamentos(f) { fs.writeFileSync(BEBIDAS_FECHAMENTOS_FILE, JSON.stringify(f, null, 2)); }
+
+const CATALOGOS_BEBIDAS = {
+  vinhos: { load: loadVinhos, save: saveVinhos },
+  alcoolicas: { load: loadBebidasAlc, save: saveBebidasAlc },
+  naoalcoolicas: { load: loadBebidasNaoAlc, save: saveBebidasNaoAlc }
+};
+
+app.get('/api/bebidas/periodos', (req, res) => {
+  const fechamentos = loadFechamentos();
+  const todos = new Set([mesAtualKey()]);
+  for (const cat of Object.keys(CATALOGOS_BEBIDAS)) {
+    Object.keys(fechamentos[cat] || {}).forEach(m => todos.add(m));
+  }
+  res.json({ periodos: [...todos].sort().reverse(), mesAtual: mesAtualKey() });
+});
+
+app.post('/api/bebidas/fechar-mes', (req, res) => {
+  const mes = String(req.body.mes || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe o mês no formato AAAA-MM.' });
+  if (mes === mesAtualKey()) return res.status(400).json({ error: 'Não é possível fechar o mês corrente.' });
+
+  const fechamentos = loadFechamentos();
+  const resultado = {};
+  for (const [cat, { load, save }] of Object.entries(CATALOGOS_BEBIDAS)) {
+    if (!fechamentos[cat]) fechamentos[cat] = {};
+    if (fechamentos[cat][mes]) return res.status(409).json({ error: `O mês ${mes} já está fechado para ${cat}.` });
+
+    const itens = load();
+    // Congela o estado atual (com estoqueFinal calculado) como o snapshot definitivo do mês
+    fechamentos[cat][mes] = itens.map(comEstoqueFinal);
+
+    // Rola o estoque para o novo mês: estoque final vira o inicial, zera vendas/entradas/auditoria
+    for (const item of itens) {
+      const final = comEstoqueFinal(item).estoqueFinal;
+      item.estoqueInicial = final;
+      item.vendas = 0;
+      item.vendasCaed = 0;
+      item.entradas = 0;
+      item.auditoria = null;
+      item.observacao = '';
+    }
+    save(itens);
+    resultado[cat] = fechamentos[cat][mes].length;
+  }
+  saveFechamentos(fechamentos);
+  res.json({ ok: true, mes, itensFechadosPorCategoria: resultado });
+});
+
 app.get('/api/bebidas/vinhos', (req, res) => {
+  const mes = req.query.mes;
+  if (mes && mes !== mesAtualKey()) {
+    const fechamentos = loadFechamentos();
+    const snapshot = fechamentos.vinhos?.[mes];
+    if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
+    return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), tacaTinto: 0, tacaBranco: 0, fechado: true, mes });
+  }
   const itens = loadVinhos().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const { tacaTinto, tacaBranco } = loadTacas();
-  res.json({ itens, tacaTinto, tacaBranco });
+  res.json({ itens, tacaTinto, tacaBranco, fechado: false, mes: mesAtualKey() });
 });
 
 app.post('/api/bebidas/vinhos/novo', (req, res) => {
@@ -2386,8 +2450,15 @@ app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
 });
 
 app.get('/api/bebidas/alcoolicas', (req, res) => {
+  const mes = req.query.mes;
+  if (mes && mes !== mesAtualKey()) {
+    const fechamentos = loadFechamentos();
+    const snapshot = fechamentos.alcoolicas?.[mes];
+    if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
+    return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), fechado: true, mes });
+  }
   const itens = loadBebidasAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  res.json({ itens });
+  res.json({ itens, fechado: false, mes: mesAtualKey() });
 });
 
 app.post('/api/bebidas/alcoolicas/novo', (req, res) => {
@@ -2444,8 +2515,15 @@ app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
 });
 
 app.get('/api/bebidas/naoalcoolicas', (req, res) => {
+  const mes = req.query.mes;
+  if (mes && mes !== mesAtualKey()) {
+    const fechamentos = loadFechamentos();
+    const snapshot = fechamentos.naoalcoolicas?.[mes];
+    if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
+    return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), fechado: true, mes });
+  }
   const itens = loadBebidasNaoAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  res.json({ itens });
+  res.json({ itens, fechado: false, mes: mesAtualKey() });
 });
 
 app.post('/api/bebidas/naoalcoolicas/novo', (req, res) => {

@@ -82,10 +82,27 @@
 </div>
 
 <div class="main">
-  <div class="subtabbar">
+  <div class="subtabbar" style="align-items:center">
     <button class="subtab active" id="btnSecVinhos" onclick="trocarSubAba('vinhos')">Vinhos</button>
     <button class="subtab" id="btnSecAlcoolicas" onclick="trocarSubAba('alcoolicas')">Bebidas Alcoólicas</button>
     <button class="subtab" id="btnSecNaoAlcoolicas" onclick="trocarSubAba('naoalcoolicas')">Não Alcoólicas</button>
+    <select id="seletorPeriodo" onchange="trocarPeriodo(this.value)"
+      style="margin-left:12px;padding:7px 12px;border-radius:8px;border:.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px"></select>
+    <span id="avisoFechado" style="display:none;font-size:11px;font-weight:600;color:var(--amber);background:var(--amber-bg);padding:5px 10px;border-radius:6px;margin-left:8px">🔒 Mês fechado — somente leitura</span>
+    <button class="subtab" id="btnFecharMes" onclick="abrirFecharMes()" style="margin-left:auto;border-color:var(--red)">🔒 Fechar Mês</button>
+  </div>
+
+  <div class="tcard" id="formFecharMes" style="display:none;margin:0 0 1.25rem;padding:1rem 1.25rem">
+    <p style="font-size:13px;margin-bottom:10px">Fechar qual mês? Isso congela Vinhos, Bebidas Alcoólicas e Não Alcoólicas nesse período (o estoque final vira o inicial do mês seguinte). Não pode ser desfeito pela tela.</p>
+    <div style="display:flex;gap:8px;align-items:end">
+      <div>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Mês (AAAA-MM)</label>
+        <input class="in" style="width:110px" type="text" id="mesFecharInput" placeholder="2026-07">
+      </div>
+      <button class="btn-inserir" onclick="confirmarFecharMes()">Confirmar fechamento</button>
+      <button class="btn-inserir" style="background:var(--muted)" onclick="document.getElementById('formFecharMes').style.display='none'">Cancelar</button>
+    </div>
+    <div id="fecharMesErro" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
   </div>
 
   <div id="secVinhos">
@@ -350,6 +367,77 @@ let ordemCampo = 'nome', ordemAsc = true;
 let viewAtual = 'lista';
 let modoEdicao = false;
 let subAba = 'vinhos';
+let periodoAtual = null;   // mês selecionado no filtro (AAAA-MM); null até carregarPeriodos() rodar
+let mesAtualReal = null;   // mês corrente do sistema (sempre editável)
+let mesFechado = false;    // true quando o período selecionado já foi fechado (somente leitura)
+
+async function carregarPeriodos() {
+  const r = await fetch('/api/bebidas/periodos');
+  const d = await r.json();
+  mesAtualReal = d.mesAtual;
+  periodoAtual = mesAtualReal;
+  const sel = document.getElementById('seletorPeriodo');
+  sel.innerHTML = d.periodos.map(m => `<option value="${m}" ${m===periodoAtual?'selected':''}>${formatarMes(m)}${m===mesAtualReal?' (atual)':''}</option>`).join('');
+}
+
+function formatarMes(m) {
+  const [ano, mes] = m.split('-');
+  const NOMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  return `${NOMES[+mes - 1]}/${ano}`;
+}
+
+function trocarPeriodo(mes) {
+  periodoAtual = mes;
+  mesFechado = mes !== mesAtualReal;
+  document.getElementById('avisoFechado').style.display = mesFechado ? '' : 'none';
+  // Em mês fechado, força a visão de leitura (some com edição/inserção/auditoria)
+  if (mesFechado) {
+    modoEdicao = false; modoEdicaoAlc = false; modoEdicaoNA = false;
+    viewAtual = 'lista'; viewAtualAlc = 'lista'; viewAtualNA = 'lista';
+  }
+  ['btnEditar','btnEditarAlc','btnEditarNA','btnAuditoria','btnAlcAuditoria','btnNAAuditoria'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = mesFechado ? 'none' : '';
+  });
+  document.querySelectorAll('[onclick^="abrirFormNovo"]').forEach(el => el.style.display = mesFechado ? 'none' : '');
+  if (subAba === 'vinhos') carregar();
+  else if (subAba === 'alcoolicas') carregarAlc();
+  else carregarNA();
+}
+
+function abrirFecharMes() {
+  document.getElementById('formFecharMes').style.display = '';
+  document.getElementById('fecharMesErro').style.display = 'none';
+  if (mesAtualReal) {
+    const [ano, mes] = mesAtualReal.split('-').map(Number);
+    const anterior = mes === 1 ? `${ano-1}-12` : `${ano}-${String(mes-1).padStart(2,'0')}`;
+    document.getElementById('mesFecharInput').value = anterior;
+  }
+}
+
+async function confirmarFecharMes() {
+  const mes = document.getElementById('mesFecharInput').value.trim();
+  const erroEl = document.getElementById('fecharMesErro');
+  if (!/^\d{4}-\d{2}$/.test(mes)) {
+    erroEl.textContent = 'Informe o mês no formato AAAA-MM (ex: 2026-07).';
+    erroEl.style.display = '';
+    return;
+  }
+  if (!confirm(`Fechar ${formatarMes(mes)} para Vinhos, Bebidas Alcoólicas e Não Alcoólicas? O estoque final vira o inicial do próximo mês e essa ação não pode ser desfeita por aqui.`)) return;
+
+  const r = await fetch('/api/bebidas/fechar-mes', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ mes })
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    erroEl.textContent = d.error || 'Erro ao fechar o mês.';
+    erroEl.style.display = '';
+    return;
+  }
+  document.getElementById('formFecharMes').style.display = 'none';
+  await carregarPeriodos();
+  trocarPeriodo(mesAtualReal);
+}
 
 function trocarSubAba(nome) {
   subAba = nome;
@@ -419,7 +507,7 @@ async function carregar() {
     const d = await r.json();
     itensCache = d.itens || [];
   } else {
-    const r = await fetch('/api/bebidas/vinhos');
+    const r = await fetch(`/api/bebidas/vinhos?mes=${periodoAtual || ''}`);
     const d = await r.json();
     itensCache = d.itens || [];
     const tacaTinto = d.tacaTinto || 0, tacaBranco = d.tacaBranco || 0;
@@ -624,7 +712,7 @@ async function carregarAlc() {
     const d = await r.json();
     itensAlcCache = d.itens || [];
   } else {
-    const r = await fetch('/api/bebidas/alcoolicas');
+    const r = await fetch(`/api/bebidas/alcoolicas?mes=${periodoAtual || ''}`);
     const d = await r.json();
     itensAlcCache = d.itens || [];
   }
@@ -830,7 +918,7 @@ async function carregarNA() {
     const d = await r.json();
     itensNACache = d.itens || [];
   } else {
-    const r = await fetch('/api/bebidas/naoalcoolicas');
+    const r = await fetch(`/api/bebidas/naoalcoolicas?mes=${periodoAtual || ''}`);
     const d = await r.json();
     itensNACache = d.itens || [];
   }
@@ -973,7 +1061,7 @@ async function atualizarNA(codigo, campo, valor) {
   }
 }
 
-carregar();
+carregarPeriodos().then(carregar);
 </script>
 </body>
 </html>
