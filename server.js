@@ -1822,10 +1822,16 @@ function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
   for (const it of itensPdv) {
     const palavrasPdv = new Set(sigFn(it.nome));
     if (!palavrasPdv.size) continue;
-    let melhorIdx = -1, melhorScore = 0;
+    // Em empate de score, prefere o item cujo total de palavras mais se aproxima do PDV (match mais
+    // exato) — não pode depender da ORDEM do catálogo, já que itens novos são sempre anexados ao
+    // final do array salvo, então "primeiro no array" não significa "nome mais específico/correto".
+    let melhorIdx = -1, melhorScore = 0, melhorDiff = Infinity;
     itensEstoque.forEach((_, idx) => {
       const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
-      if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
+      const diff = Math.abs(palavrasPorItem[idx].length - palavrasPdv.size);
+      if (score > melhorScore || (score === melhorScore && score > 0 && diff < melhorDiff)) {
+        melhorScore = score; melhorIdx = idx; melhorDiff = diff;
+      }
     });
     if (melhorIdx === -1 || (melhorScore < 2 && melhorScore < palavrasPdv.size)) continue;
     const codigo = itensEstoque[melhorIdx].codigo;
@@ -1853,10 +1859,13 @@ function apurarVendasVinhosDoMes(texto) {
     const palavrasPdv = new Set(palavrasSignificativas(it.nome));
     if (!palavrasPdv.size) continue;
 
-    let melhorIdx = -1, melhorScore = 0;
+    let melhorIdx = -1, melhorScore = 0, melhorDiff = Infinity;
     itensEstoque.forEach((_, idx) => {
       const score = palavrasPorItem[idx].reduce((s, p) => s + (palavrasPdv.has(p) ? 1 : 0), 0);
-      if (score > melhorScore) { melhorScore = score; melhorIdx = idx; }
+      const diff = Math.abs(palavrasPorItem[idx].length - palavrasPdv.size);
+      if (score > melhorScore || (score === melhorScore && score > 0 && diff < melhorDiff)) {
+        melhorScore = score; melhorIdx = idx; melhorDiff = diff;
+      }
     });
     // Exige ao menos 2 palavras em comum (ou 100% das palavras do item, se ele só tiver 1) para
     // evitar falso-positivo de itens de outros grupos (ex: cerveja/drinks) que acertem por acaso
