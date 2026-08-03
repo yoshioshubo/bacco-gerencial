@@ -197,6 +197,20 @@ const ENTRADAS_NF_JULHO_2026 = [
   { codigo: 'N006',     valor: 3 }   // NF 431 — Santa Helena Cabernet Sauvignon 375ml
 ];
 
+// Entradas adicionais de julho/2026 — NF SALUT 000.013.486 (31/07) e NF MG ON 000.126.569 (29/07).
+// Diferente do array acima (que substitui), este SOMA um delta, pois é entrada nova além do que
+// já tinha sido lançado (não é correção de duplicidade).
+const ENTRADAS_NF_JULHO_2026_LOTE2 = [
+  { id: 'entrada-lote2-G108',   codigo: 'G108',   delta: 4 }, // NF SALUT 486 — Cartuxa EA Tinto 375ml
+  { id: 'entrada-lote2-N009',   codigo: 'N009',   delta: 1 }, // NF SALUT 486 — Cartuxa EA Trincadeira 750ml
+  { id: 'entrada-lote2-06020043', codigo: '06020043', delta: 4 }, // NF SALUT 486 — Bons Ventos Tinto 375ml
+  { id: 'entrada-lote2-N005',   codigo: 'N005',   delta: 4 }, // NF SALUT 486 — Tantehue Carmenère 750ml
+  { id: 'entrada-lote2-WC0109', codigo: 'WC0109', delta: 3 }, // NF SALUT 486 — Cordero Malbec 750ml
+  { id: 'entrada-lote2-000935', codigo: '000935', delta: 3 }, // NF SALUT 486 — Anubis Malbec 750ml
+  { id: 'entrada-lote2-001201', codigo: '001201', delta: 3 }, // NF MG ON 569 — Corsarini Montepulciano 750ml
+  { id: 'entrada-lote2-001200', codigo: '001200', delta: 3 }  // NF MG ON 569 — Burdizzo Primitivo 750ml
+];
+
 // Contagem física de 28/07/2026 (Contagem_Consolidada_Vinhos.pdf) — aplicada uma única vez no
 // campo Auditoria; o usuário pode sobrescrever livremente depois com a contagem real do dia 31
 const AUDITORIA_28_07_2026 = [
@@ -330,6 +344,13 @@ function loadVinhos() {
     : { aplicadas: [] };
   let migracoesMudaram = false;
   for (const m of ENTRADAS_INICIAIS_MIGRACAO) {
+    if (migracoes.aplicadas.includes(m.id)) continue;
+    const item = itens.find(i => i.codigo === m.codigo);
+    if (item) { item.entradas = +((item.entradas || 0) + m.delta).toFixed(3); mudou = true; }
+    migracoes.aplicadas.push(m.id);
+    migracoesMudaram = true;
+  }
+  for (const m of ENTRADAS_NF_JULHO_2026_LOTE2) {
     if (migracoes.aplicadas.includes(m.id)) continue;
     const item = itens.find(i => i.codigo === m.codigo);
     if (item) { item.entradas = +((item.entradas || 0) + m.delta).toFixed(3); mudou = true; }
