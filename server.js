@@ -2383,6 +2383,30 @@ app.post('/api/bebidas/fechar-mes', (req, res) => {
   res.json({ ok: true, mes, itensFechadosPorCategoria: resultado });
 });
 
+// Edita um item dentro de um snapshot de mês JÁ FECHADO (corrige erro de contagem/observação
+// passado sem precisar reabrir o mês inteiro). Não mexe no mês corrente.
+function criarEndpointAtualizarFechado(path, catKey, camposTexto) {
+  app.post(`/api/bebidas/${path}/atualizar-fechado`, (req, res) => {
+    const { mes, codigo, campo, valor } = req.body;
+    if (!mes || !codigo || !['vendas','entradas','auditoria','estoqueInicial', ...camposTexto].includes(campo)) {
+      return res.status(400).json({ error: 'mes, codigo e campo válido são obrigatórios.' });
+    }
+    const fechamentos = loadFechamentos();
+    const snapshot = fechamentos[catKey]?.[mes];
+    if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
+    const item = snapshot.find(i => i.codigo === codigo);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado no fechamento.' });
+    if (camposTexto.includes(campo)) {
+      item[campo] = String(valor || '');
+    } else {
+      item[campo] = valor === '' || valor === null ? (campo === 'auditoria' ? null : 0) : +valor;
+    }
+    item.estoqueFinal = +(item.estoqueInicial + (item.entradas||0) + (item.vendas||0)).toFixed(3);
+    saveFechamentos(fechamentos);
+    res.json({ ok: true, item });
+  });
+}
+
 app.get('/api/bebidas/vinhos', (req, res) => {
   const mes = req.query.mes;
   if (mes && mes !== mesAtualKey()) {
@@ -2434,8 +2458,8 @@ app.get('/api/bebidas/vinhos/auditoria', (req, res) => {
 const CAMPOS_TEXTO_VINHO = ['observacao', 'nome', 'tamanho', 'categoria'];
 app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
-  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_VINHO].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho|categoria) são obrigatórios.' });
+  if (!codigo || !['vendas','entradas','auditoria','estoqueInicial', ...CAMPOS_TEXTO_VINHO].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|estoqueInicial|observacao|nome|tamanho|categoria) são obrigatórios.' });
   }
   const itens = loadVinhos();
   const item = itens.find(i => i.codigo === codigo);
@@ -2448,6 +2472,7 @@ app.post('/api/bebidas/vinhos/atualizar', (req, res) => {
   saveVinhos(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
+criarEndpointAtualizarFechado('vinhos', 'vinhos', CAMPOS_TEXTO_VINHO);
 
 app.get('/api/bebidas/alcoolicas', (req, res) => {
   const mes = req.query.mes;
@@ -2499,8 +2524,8 @@ app.get('/api/bebidas/alcoolicas/auditoria', (req, res) => {
 const CAMPOS_TEXTO_BEBIDA_ALC = ['observacao', 'nome', 'tamanho', 'grupo'];
 app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
-  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_BEBIDA_ALC].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho) são obrigatórios.' });
+  if (!codigo || !['vendas','entradas','auditoria','estoqueInicial', ...CAMPOS_TEXTO_BEBIDA_ALC].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|estoqueInicial|observacao|nome|tamanho) são obrigatórios.' });
   }
   const itens = loadBebidasAlc();
   const item = itens.find(i => i.codigo === codigo);
@@ -2513,6 +2538,7 @@ app.post('/api/bebidas/alcoolicas/atualizar', (req, res) => {
   saveBebidasAlc(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
+criarEndpointAtualizarFechado('alcoolicas', 'alcoolicas', CAMPOS_TEXTO_BEBIDA_ALC);
 
 app.get('/api/bebidas/naoalcoolicas', (req, res) => {
   const mes = req.query.mes;
@@ -2564,8 +2590,8 @@ app.get('/api/bebidas/naoalcoolicas/auditoria', (req, res) => {
 const CAMPOS_TEXTO_BEBIDA_NAOALC = ['observacao', 'nome', 'tamanho', 'grupo'];
 app.post('/api/bebidas/naoalcoolicas/atualizar', (req, res) => {
   const { codigo, campo, valor } = req.body;
-  if (!codigo || !['vendas','entradas','auditoria', ...CAMPOS_TEXTO_BEBIDA_NAOALC].includes(campo)) {
-    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|observacao|nome|tamanho|grupo) são obrigatórios.' });
+  if (!codigo || !['vendas','entradas','auditoria','estoqueInicial', ...CAMPOS_TEXTO_BEBIDA_NAOALC].includes(campo)) {
+    return res.status(400).json({ error: 'codigo e campo (vendas|entradas|auditoria|estoqueInicial|observacao|nome|tamanho|grupo) são obrigatórios.' });
   }
   const itens = loadBebidasNaoAlc();
   const item = itens.find(i => i.codigo === codigo);
@@ -2578,6 +2604,7 @@ app.post('/api/bebidas/naoalcoolicas/atualizar', (req, res) => {
   saveBebidasNaoAlc(itens);
   res.json({ ok: true, item: comEstoqueFinal(item) });
 });
+criarEndpointAtualizarFechado('naoalcoolicas', 'naoalcoolicas', CAMPOS_TEXTO_BEBIDA_NAOALC);
 
 function mesAtualKey() {
   const d = new Date();

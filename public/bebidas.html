@@ -395,7 +395,10 @@ function trocarPeriodo(mes) {
     modoEdicao = false; modoEdicaoAlc = false; modoEdicaoNA = false;
     viewAtual = 'lista'; viewAtualAlc = 'lista'; viewAtualNA = 'lista';
   }
-  ['btnEditar','btnEditarAlc','btnEditarNA','btnAuditoria','btnAlcAuditoria','btnNAAuditoria'].forEach(id => {
+  // Em mês fechado: continua permitindo editar itens (corrigir contagem/observação retroativa),
+  // só esconde "+ Novo Item" (não cadastra produto novo num mês já congelado) e a view Auditoria
+  // (o endpoint de auditoria só existe para o mês corrente)
+  ['btnAuditoria','btnAlcAuditoria','btnNAAuditoria'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = mesFechado ? 'none' : '';
   });
   document.querySelectorAll('[onclick^="abrirFormNovo"]').forEach(el => el.style.display = mesFechado ? 'none' : '');
@@ -623,13 +626,16 @@ function linhaVinho(it, OPCOES_CATEGORIA) {
     const entradasCell = modoEdicao
       ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizar('${it.codigo}','entradas',this.value)">`
       : N(it.entradas ?? 0);
+    const estoqueInicialCell = modoEdicao
+      ? `<input class="in" type="number" step="any" value="${it.estoqueInicial ?? 0}" onchange="atualizar('${it.codigo}','estoqueInicial',this.value)">`
+      : N(it.estoqueInicial);
 
     return `<tr>
       <td class="mono">${it.codigo}</td>
       <td>${categoriaCell}</td>
       <td>${nomeCell}</td>
       <td class="mono">${tamanhoCell}</td>
-      <td class="num">${N(it.estoqueInicial)}</td>
+      <td class="num">${estoqueInicialCell}</td>
       <td class="num">${vendasCell}</td>
       <td class="num">${entradasCell}</td>
       <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
@@ -639,9 +645,11 @@ function linhaVinho(it, OPCOES_CATEGORIA) {
 }
 
 async function atualizar(codigo, campo, valor) {
-  const r = await fetch('/api/bebidas/vinhos/atualizar', {
+  const url = mesFechado ? '/api/bebidas/vinhos/atualizar-fechado' : '/api/bebidas/vinhos/atualizar';
+  const body = mesFechado ? { mes: periodoAtual, codigo, campo, valor } : { codigo, campo, valor };
+  const r = await fetch(url, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ codigo, campo, valor })
+    body: JSON.stringify(body)
   });
   const d = await r.json();
   if (d.item) {
@@ -822,13 +830,16 @@ function linhaAlc(it, OPCOES_GRUPO) {
   const entradasCell = modoEdicaoAlc
     ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizarAlc('${it.codigo}','entradas',this.value)">`
     : N(it.entradas ?? 0);
+  const estoqueInicialCell = modoEdicaoAlc
+    ? `<input class="in" type="number" step="any" value="${it.estoqueInicial ?? 0}" onchange="atualizarAlc('${it.codigo}','estoqueInicial',this.value)">`
+    : N(it.estoqueInicial);
 
   return `<tr>
     <td class="mono">${it.codigo}</td>
     <td>${grupoCell}</td>
     <td>${nomeCell}</td>
     <td class="mono">${tamanhoCell}</td>
-    <td class="num">${N(it.estoqueInicial)}</td>
+    <td class="num">${estoqueInicialCell}</td>
     <td class="num">${vendasCell}</td>
     <td class="num">${entradasCell}</td>
     <td class="num ${it.estoqueFinal < 0 ? 'negativo' : ''}">${N(it.estoqueFinal)}</td>
@@ -838,9 +849,11 @@ function linhaAlc(it, OPCOES_GRUPO) {
 }
 
 async function atualizarAlc(codigo, campo, valor) {
-  const r = await fetch('/api/bebidas/alcoolicas/atualizar', {
+  const url = mesFechado ? '/api/bebidas/alcoolicas/atualizar-fechado' : '/api/bebidas/alcoolicas/atualizar';
+  const body = mesFechado ? { mes: periodoAtual, codigo, campo, valor } : { codigo, campo, valor };
+  const r = await fetch(url, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ codigo, campo, valor })
+    body: JSON.stringify(body)
   });
   const d = await r.json();
   if (d.item) {
@@ -1032,13 +1045,16 @@ function linhaNA(it, OPCOES_GRUPO) {
     ? `<input class="in" type="number" step="any" value="${it.entradas ?? 0}" onchange="atualizarNA('${it.codigo}','entradas',this.value)">`
     : N(it.entradas ?? 0);
   const caedCell = (it.vendasCaed || 0) !== 0 ? `<span style="color:var(--blue)">${N(it.vendasCaed)}</span>` : '—';
+  const estoqueInicialCell = modoEdicaoNA
+    ? `<input class="in" type="number" step="any" value="${it.estoqueInicial ?? 0}" onchange="atualizarNA('${it.codigo}','estoqueInicial',this.value)">`
+    : N(it.estoqueInicial);
 
   return `<tr>
     <td class="mono">${it.codigo}</td>
     <td>${grupoCell}</td>
     <td>${nomeCell}</td>
     <td class="mono">${tamanhoCell}</td>
-    <td class="num">${N(it.estoqueInicial)}</td>
+    <td class="num">${estoqueInicialCell}</td>
     <td class="num">${vendasCell}</td>
     <td class="num">${caedCell}</td>
     <td class="num">${entradasCell}</td>
@@ -1049,9 +1065,11 @@ function linhaNA(it, OPCOES_GRUPO) {
 }
 
 async function atualizarNA(codigo, campo, valor) {
-  const r = await fetch('/api/bebidas/naoalcoolicas/atualizar', {
+  const url = mesFechado ? '/api/bebidas/naoalcoolicas/atualizar-fechado' : '/api/bebidas/naoalcoolicas/atualizar';
+  const body = mesFechado ? { mes: periodoAtual, codigo, campo, valor } : { codigo, campo, valor };
+  const r = await fetch(url, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ codigo, campo, valor })
+    body: JSON.stringify(body)
   });
   const d = await r.json();
   if (d.item) {
