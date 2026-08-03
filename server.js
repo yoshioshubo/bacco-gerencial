@@ -2196,6 +2196,73 @@ app.get('/api/debug-auditoria-naoalc', async (req, res) => {
   }
 });
 
+app.get('/api/debug-auditoria-vinhos', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+    const linhas = texto.split('\n');
+
+    // soma extraída pelo parser (GRUPO:VINHOS + GRUPO:BEBIDA ALCOOLICA, garrafa + taça juntos)
+    const itensPdv = extrairItensVinho(texto);
+    const somaExtraidaTotal = itensPdv.reduce((s, it) => s + it.qtd, 0);
+    const somaExtraidaGarrafas = itensPdv.filter(it => it.tipo === 'Garrafa').reduce((s, it) => s + it.qtd, 0);
+    const somaExtraidaTaca = itensPdv.filter(it => it.tipo === 'Taça').reduce((s, it) => s + it.qtd, 0);
+
+    // soma declarada pelo próprio PDV (linha "TOTAL DO DIA:" dentro de GRUPO:VINHOS apenas —
+    // GRUPO:BEBIDA ALCOOLICA fica de fora pq a maior parte não é vinho)
+    let dentro = false;
+    let somaDeclarada = 0;
+    for (const lOrig of linhas) {
+      const l = lOrig.trim();
+      const gm = l.match(/^GRUPO:\s*(.+)$/i);
+      if (gm) { dentro = gm[1].trim().toUpperCase() === 'VINHOS'; continue; }
+      if (!dentro) continue;
+      const tm = l.match(/TOTAL DO DIA:(\d+(?:,\d+)?)/);
+      if (tm) somaDeclarada += parseFloat(tm[1].replace(',', '.'));
+    }
+
+    const itensEstoque = loadVinhos();
+    const porCodigo = casarItensPorPalavras(itensPdv.filter(it => it.tipo === 'Garrafa'), itensEstoque, STOPWORDS_VINHO);
+    const somaCasadaGarrafas = Object.values(porCodigo).reduce((s, v) => s + v, 0);
+
+    const porNome = {};
+    for (const it of itensPdv) {
+      const chave = `${it.tipo}: ${it.nome}`;
+      porNome[chave] = (porNome[chave] || 0) + it.qtd;
+    }
+    const resumoPorNome = Object.entries(porNome)
+      .map(([nome, qtd]) => ({ nome, qtd: Math.round(qtd * 100) / 100 }))
+      .sort((a,b) => b.qtd - a.qtd);
+
+    const nomesQueCasaram = new Set();
+    for (const it of itensPdv.filter(it => it.tipo === 'Garrafa')) {
+      const testeUnico = casarItensPorPalavras([it], itensEstoque, STOPWORDS_VINHO);
+      if (Object.keys(testeUnico).length) nomesQueCasaram.add(it.nome);
+    }
+    const naoCasados = resumoPorNome.filter(r => r.nome.startsWith('Garrafa') && !nomesQueCasaram.has(r.nome.replace('Garrafa: ', '')));
+
+    res.json({
+      arquivo: arquivo.name,
+      somaExtraidaTotal: Math.round(somaExtraidaTotal * 100) / 100,
+      somaExtraidaGarrafas: Math.round(somaExtraidaGarrafas * 100) / 100,
+      somaExtraidaTaca: Math.round(somaExtraidaTaca * 100) / 100,
+      somaDeclaradaPeloPDV: Math.round(somaDeclarada * 100) / 100,
+      somaCasadaComCatalogo: Math.round(somaCasadaGarrafas * 100) / 100,
+      diferencaGarrafasVsDeclarado: Math.round((somaDeclarada - somaExtraidaGarrafas) * 100) / 100,
+      diferencaCasadoVsExtraidoGarrafas: Math.round((somaExtraidaGarrafas - somaCasadaGarrafas) * 100) / 100,
+      resumoPorNome,
+      naoCasados
+    });
+  } catch(e) {
+    res.status(500).json({ ok: false, erro: e.message, stack: e.stack });
+  }
+});
+
 app.get('/api/debug-apurar-vinhos', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
