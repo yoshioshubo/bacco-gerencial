@@ -22,6 +22,26 @@ const BEBIDAS_MIGRACOES_FILE = path.join(DATA_DIR, 'bebidas-vinhos-migracoes.jso
 const BEBIDAS_ALC_FILE = path.join(DATA_DIR, 'bebidas-alcoolicas.json');
 const BEBIDAS_NAOALC_FILE = path.join(DATA_DIR, 'bebidas-nao-alcoolicas.json');
 const BEBIDAS_FECHAMENTOS_FILE = path.join(DATA_DIR, 'bebidas-fechamentos.json');
+const MES_CORRENTE_BEBIDAS_FILE = path.join(DATA_DIR, 'mes-corrente-bebidas.json');
+
+// O "mês corrente" do controle de bebidas NÃO segue o calendário real (diferente do resto do
+// dashboard) — ele só avança quando o usuário fecha o mês anterior explicitamente pelo botão
+// "Fechar Mês". Sem isso, a virada automática de calendário (ex: virar agosto no dia 1º) ficaria
+// processando vendas de agosto num mês que o usuário ainda não fechou/revisou.
+function mesCorrenteBebidas() {
+  try {
+    const d = JSON.parse(fs.readFileSync(MES_CORRENTE_BEBIDAS_FILE, 'utf8'));
+    if (d.mes) return d.mes;
+  } catch {}
+  return '2026-07'; // mês em que o controle de estoque de bebidas começou a ser usado
+}
+function avancarMesCorrenteBebidas(mes) {
+  fs.writeFileSync(MES_CORRENTE_BEBIDAS_FILE, JSON.stringify({ mes }, null, 2));
+}
+function proximoMesKey(mes) {
+  const [ano, m] = mes.split('-').map(Number);
+  return m === 12 ? `${ano + 1}-01` : `${ano}-${String(m + 1).padStart(2, '0')}`;
+}
 const SHARED_DRIVE    = process.env.SHARED_DRIVE_ID    || '0AKZcsytstd78Uk9PVA';
 const EVENTOS_FOLDER  = process.env.EVENTOS_FOLDER_ID  || '1OjS3q7vAccft_n4novmv6d86MBrwiQ9k';
 const CAED_FILE_ID = process.env.CAED_FILE_ID || '1sRXE6m2UHVjC0oAjiYBydbsYzKrUmSQU7bmrjGDjkxg';
@@ -1314,7 +1334,7 @@ async function sincronizar() {
     dados[mes] = buildMesData(vf, of, vendas, ocupacao, eventosMap[mes], mes, caedMap[mes]);
 
     // Apura vendas de vinho do mês corrente (ciclo mensal — recalcula do zero a cada sincronização)
-    if (mes === mesAtualKey() && vText) {
+    if (mes === mesCorrenteBebidas() && vText) {
       try { apurarVendasVinhosDoMes(vText); } catch(e) { console.warn('[Bebidas/Vinhos]', e.message); }
       try { apurarVendasBebidasAlcDoMes(vText); } catch(e) { console.warn('[Bebidas/Alcoolicas]', e.message); }
       try { apurarVendasBebidasNaoAlcDoMes(vText); } catch(e) { console.warn('[Bebidas/NaoAlcoolicas]', e.message); }
@@ -2181,7 +2201,7 @@ app.get('/api/debug-apurar-vinhos', async (req, res) => {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
     if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
     const pdfs = await allPdfs(vendaDir.id);
-    const mesAtual = mesAtualKey();
+    const mesAtual = mesCorrenteBebidas();
     const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === mesAtual);
     if (!arquivosDoMes.length) return res.json({ mesAtual, erro: 'Nenhum PDF de vendas encontrado para o mês corrente.' });
     // usa o mesmo critério do sincronizar(): o mais recentemente modificado
@@ -2344,17 +2364,19 @@ const CATALOGOS_BEBIDAS = {
 
 app.get('/api/bebidas/periodos', (req, res) => {
   const fechamentos = loadFechamentos();
-  const todos = new Set([mesAtualKey()]);
+  const mesAtual = mesCorrenteBebidas();
+  const todos = new Set([mesAtual]);
   for (const cat of Object.keys(CATALOGOS_BEBIDAS)) {
     Object.keys(fechamentos[cat] || {}).forEach(m => todos.add(m));
   }
-  res.json({ periodos: [...todos].sort().reverse(), mesAtual: mesAtualKey() });
+  res.json({ periodos: [...todos].sort().reverse(), mesAtual });
 });
 
 app.post('/api/bebidas/fechar-mes', (req, res) => {
   const mes = String(req.body.mes || '').trim();
+  const mesCorrente = mesCorrenteBebidas();
   if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe o mês no formato AAAA-MM.' });
-  if (mes === mesAtualKey()) return res.status(400).json({ error: 'Não é possível fechar o mês corrente.' });
+  if (mes !== mesCorrente) return res.status(400).json({ error: `O mês corrente é ${mesCorrente} — feche exatamente esse mês (não dá pra pular meses).` });
 
   const fechamentos = loadFechamentos();
   const resultado = {};
@@ -2380,7 +2402,8 @@ app.post('/api/bebidas/fechar-mes', (req, res) => {
     resultado[cat] = fechamentos[cat][mes].length;
   }
   saveFechamentos(fechamentos);
-  res.json({ ok: true, mes, itensFechadosPorCategoria: resultado });
+  avancarMesCorrenteBebidas(proximoMesKey(mes));
+  res.json({ ok: true, mes, mesCorrenteNovo: proximoMesKey(mes), itensFechadosPorCategoria: resultado });
 });
 
 // Edita um item dentro de um snapshot de mês JÁ FECHADO (corrige erro de contagem/observação
@@ -2409,7 +2432,7 @@ function criarEndpointAtualizarFechado(path, catKey, camposTexto) {
 
 app.get('/api/bebidas/vinhos', (req, res) => {
   const mes = req.query.mes;
-  if (mes && mes !== mesAtualKey()) {
+  if (mes && mes !== mesCorrenteBebidas()) {
     const fechamentos = loadFechamentos();
     const snapshot = fechamentos.vinhos?.[mes];
     if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
@@ -2417,7 +2440,7 @@ app.get('/api/bebidas/vinhos', (req, res) => {
   }
   const itens = loadVinhos().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const { tacaTinto, tacaBranco } = loadTacas();
-  res.json({ itens, tacaTinto, tacaBranco, fechado: false, mes: mesAtualKey() });
+  res.json({ itens, tacaTinto, tacaBranco, fechado: false, mes: mesCorrenteBebidas() });
 });
 
 app.post('/api/bebidas/vinhos/novo', (req, res) => {
@@ -2476,14 +2499,14 @@ criarEndpointAtualizarFechado('vinhos', 'vinhos', CAMPOS_TEXTO_VINHO);
 
 app.get('/api/bebidas/alcoolicas', (req, res) => {
   const mes = req.query.mes;
-  if (mes && mes !== mesAtualKey()) {
+  if (mes && mes !== mesCorrenteBebidas()) {
     const fechamentos = loadFechamentos();
     const snapshot = fechamentos.alcoolicas?.[mes];
     if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
     return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), fechado: true, mes });
   }
   const itens = loadBebidasAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  res.json({ itens, fechado: false, mes: mesAtualKey() });
+  res.json({ itens, fechado: false, mes: mesCorrenteBebidas() });
 });
 
 app.post('/api/bebidas/alcoolicas/novo', (req, res) => {
@@ -2542,14 +2565,14 @@ criarEndpointAtualizarFechado('alcoolicas', 'alcoolicas', CAMPOS_TEXTO_BEBIDA_AL
 
 app.get('/api/bebidas/naoalcoolicas', (req, res) => {
   const mes = req.query.mes;
-  if (mes && mes !== mesAtualKey()) {
+  if (mes && mes !== mesCorrenteBebidas()) {
     const fechamentos = loadFechamentos();
     const snapshot = fechamentos.naoalcoolicas?.[mes];
     if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
     return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), fechado: true, mes });
   }
   const itens = loadBebidasNaoAlc().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  res.json({ itens, fechado: false, mes: mesAtualKey() });
+  res.json({ itens, fechado: false, mes: mesCorrenteBebidas() });
 });
 
 app.post('/api/bebidas/naoalcoolicas/novo', (req, res) => {
