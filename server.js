@@ -2124,6 +2124,35 @@ app.get('/api/debug-reconciliar-naoalc', async (req, res) => {
   } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
 });
 
+const DP_FOLDER_ID = '1qC2eK-Mch_lS9aAJR537ksp-mMap6W4f';
+
+app.get('/api/debug-dp-arquivos', async (req, res) => {
+  try {
+    const q = encodeURIComponent(`'${DP_FOLDER_ID}' in parents and trashed=false`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType,modifiedTime)&corpora=allDrives`);
+    res.json({ arquivos: d.files || [] });
+  } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
+});
+
+app.get('/api/debug-dp-texto', async (req, res) => {
+  try {
+    const nomeArquivo = req.query.arquivo;
+    const q = encodeURIComponent(`'${DP_FOLDER_ID}' in parents and trashed=false`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name,mimeType)&corpora=allDrives`);
+    const arquivos = d.files || [];
+    const arquivo = nomeArquivo ? arquivos.find(f => f.name === nomeArquivo) : arquivos[0];
+    if (!arquivo) return res.status(404).json({ error: 'Arquivo não encontrado.', disponiveis: arquivos.map(f=>f.name) });
+    const buf = await downloadFile(arquivo.id);
+    let texto;
+    if (arquivo.mimeType === 'application/pdf') {
+      texto = await pdfParse(buf).then(r => r.text);
+    } else {
+      texto = buf.toString('utf8').slice(0, 5000);
+    }
+    res.json({ arquivo: arquivo.name, mimeType: arquivo.mimeType, totalChars: texto.length, primeiros4000: texto.slice(0, 4000) });
+  } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
+});
+
 app.get('/api/debug-grupos-bebidas', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
