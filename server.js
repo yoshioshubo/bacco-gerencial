@@ -1846,9 +1846,12 @@ app.get('/api/debug-produtos', async (req, res) => {
 // ── Relatório de vinhos (garrafas e taças) desde uma data ────────────────────
 // Palavras "significativas" do nome (ignora conectivos/descrições genéricas) — usadas
 // para casar o nome do vinho na base de estoque com o nome extraído do PDV
-const STOPWORDS_VINHO = new Set(['DE','DO','DA','DOS','DAS','COM','TINTO','BRANCO','ROSE','ROSADO','UN','GF','TAÇA','TACA','VINHO','VINHOS','VIN','750ML','375ML','ESPUMANTE','ESPUM','ML','LT']);
+// TINTO/BRANCO/ROSE/ROSADO NÃO entram como stopword — são justamente o que diferencia rótulos
+// que existem em mais de uma cor/variante (ex: "Bons Ventos Tinto" x "Bons Ventos Rosé").
+const STOPWORDS_VINHO = new Set(['DE','DO','DA','DOS','DAS','COM','UN','GF','TAÇA','TACA','VINHO','VINHOS','VIN','750ML','375ML','ESPUMANTE','ESPUM','ML','LT']);
 function palavrasSignificativas(nome) {
-  return normalizaTexto(nome).split(/\s+/).filter(p => p.length >= 3 && !STOPWORDS_VINHO.has(p));
+  // O catálogo abrevia a cor como "TTO" (Tinto) — normaliza para bater com o nome por extenso do PDV
+  return normalizaTexto(nome).replace(/\bTTO\b/g, 'TINTO').split(/\s+/).filter(p => p.length >= 3 && !STOPWORDS_VINHO.has(p));
 }
 
 // Casa cada item vendido (PDV) com o item da base de estoque que tiver MAIS palavras
@@ -1858,7 +1861,7 @@ function casarItensPorPalavras(itensPdv, itensEstoque, stopwords) {
   // Normaliza a abreviação do PDV "LNECK" para "LONG NECK" para casar com o nome do catálogo
   // Ignora tokens puramente numéricos (ex: código de apto/comanda que às vezes vem na frente do nome).
   // Hífen vira espaço para "Coca-Cola" tokenizar como COCA+COLA igual ao nome do PDV (sem hífen).
-  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').replace(/-/g, ' ').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p) && !/^\d+$/.test(p));
+  const sigFn = (nome) => normalizaTexto(nome).replace(/\bLNECK\b/g, 'LONG NECK').replace(/\bTTO\b/g, 'TINTO').replace(/-/g, ' ').split(/\s+/).filter(p => p.length >= 3 && !stopwords.has(p) && !/^\d+$/.test(p));
   const palavrasPorItem = itensEstoque.map(it => sigFn(it.nome));
   const porCodigo = {};
   for (const it of itensPdv) {
