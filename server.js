@@ -2042,6 +2042,33 @@ app.get('/api/debug-linhas-item-naoalc', async (req, res) => {
   } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
 });
 
+app.get('/api/debug-vinhos-em-bebida-alcoolica', async (req, res) => {
+  try {
+    const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
+    if (!vendaDir) return res.status(404).json({ error: 'Pasta VENDAS não encontrada.' });
+    const pdfs = await allPdfs(vendaDir.id);
+    const arquivosDoMes = pdfs.filter(f => mesKey(f.name) === '2026-07');
+    const arquivo = arquivosDoMes.sort((a,b) => (a.modifiedTime > b.modifiedTime ? -1 : 1))[0];
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+
+    // Só o GRUPO:BEBIDA ALCOOLICA (não GRUPO:VINHOS) — itens que deveriam estar em Vinhos mas
+    // o PDV lançou no grupo errado
+    const itensPdv = extrairItensPorGrupo(texto, g => g === 'BEBIDA ALCOOLICA').filter(it => it.tipo === 'Garrafa');
+    const itensEstoque = loadVinhos();
+
+    const linhas = itensPdv.map(it => {
+      const casado = casarItensPorPalavras([it], itensEstoque, STOPWORDS_VINHO);
+      const codigo = Object.keys(casado)[0];
+      if (!codigo) return null;
+      const vinho = itensEstoque.find(v => v.codigo === codigo);
+      return { data: it.data.toISOString().slice(0,10), nomeNoPDV: it.nome, vinhoCatalogo: vinho.nome, codigo, qtd: it.qtd };
+    }).filter(Boolean).sort((a,b) => a.data.localeCompare(b.data));
+
+    res.json({ arquivo: arquivo.name, totalOcorrencias: linhas.length, somaQtd: Math.round(linhas.reduce((s,l)=>s+l.qtd,0)*100)/100, linhas });
+  } catch(e) { res.status(500).json({ erro: e.message, stack: e.stack }); }
+});
+
 app.get('/api/debug-reconciliar-naoalc', async (req, res) => {
   try {
     const vendaDir = await findFolder(SHARED_DRIVE, 'VENDAS');
