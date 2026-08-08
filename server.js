@@ -23,6 +23,8 @@ const BEBIDAS_ALC_FILE = path.join(DATA_DIR, 'bebidas-alcoolicas.json');
 const BEBIDAS_NAOALC_FILE = path.join(DATA_DIR, 'bebidas-nao-alcoolicas.json');
 const BEBIDAS_FECHAMENTOS_FILE = path.join(DATA_DIR, 'bebidas-fechamentos.json');
 const MES_CORRENTE_BEBIDAS_FILE = path.join(DATA_DIR, 'mes-corrente-bebidas.json');
+const CMO_EXTRAS_FILE = path.join(DATA_DIR, 'cmo-extras.json');
+const CMO_EXCLUSOES_FILE = path.join(DATA_DIR, 'cmo-exclusoes.json');
 
 // O "mês corrente" do controle de bebidas NÃO segue o calendário real (diferente do resto do
 // dashboard) — ele só avança quando o usuário fecha o mês anterior explicitamente pelo botão
@@ -2126,6 +2128,168 @@ app.get('/api/debug-reconciliar-naoalc', async (req, res) => {
 
 const DP_FOLDER_ID = '1qC2eK-Mch_lS9aAJR537ksp-mMap6W4f';
 
+// ── CMO (Custo de Mão de Obra) — parser da Folha de Pagamento Analítica ──────────
+// Palavras-chave que indicam desconto (o resto é tratado como provento/benefício)
+const CMO_PALAVRAS_DESCONTO = /desconto|inss|vale transporte|alimenta|adiantamento|falta|restante de contrato/i;
+
+function cmoClassificarLancamento(descricao) {
+  return CMO_PALAVRAS_DESCONTO.test(descricao) ? 'desconto' : 'provento';
+}
+
+// Extrai um lançamento de uma linha no formato "<Descrição><Valor>[<Ref horas/qtd>]<CódigoRubrica 3 díg>"
+// (o PDV concatena os campos sem separador — ex: "Saldo de Salário683,08012,00007").
+function cmoParseLinhaLancamento(linha) {
+  const m = linha.match(/^(.+?)(\d{1,3}(?:\.\d{3})*,\d{2})((?:\d{1,3}(?:\.\d{3})*,\d{2})|(?:\d{1,3}:\d{2}))?(\d{3})$/);
+  if (!m) return null;
+  const [, descricaoRaw, valorStr] = m;
+  const descricao = descricaoRaw.replace(/\s+/g, ' ').trim();
+  if (!descricao || !/[A-ZÀ-Ú]/i.test(descricao)) return null;
+  const valor = parseFloat(valorStr.replace(/\./g, '').replace(',', '.'));
+  if (!(valor > 0)) return null;
+  return { descricao, valor, tipo: cmoClassificarLancamento(descricao), codigoRubrica: m[4] };
+}
+
+// Faz o parse do PDF "FOLHA PAGTO MMAAAA - BACCO.pdf" (folha analítica, um bloco por funcionário,
+// podendo se repetir em mais de uma página por causa de quebra — os blocos com o mesmo código são
+// mesclados). Retorna a lista de funcionários com todos os lançamentos e totais recalculados.
+function parseFolhaPagamento(texto) {
+  const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+  const porCodigo = new Map();
+  let atual = null;
+
+  for (const linha of linhas) {
+    const header = linha.match(/^(\d{6})\s+([A-ZÀ-Ú][A-ZÀ-Ú.\s]*?)(\d{1,3}(?:\.\d{3})*,\d{2})\d*$/);
+    if (header) {
+      const [, codigo, nomeRaw] = header;
+      if (!porCodigo.has(codigo)) {
+        porCodigo.set(codigo, { codigo, nome: nomeRaw.replace(/\s+/g, ' ').trim(), funcao: '', admissao: '', quitacao: '', lancamentos: [] });
+      }
+      atual = porCodigo.get(codigo);
+      continue;
+    }
+    if (!atual) continue;
+
+    const admissaoM = linha.match(/^(\d{2}\/\d{2}\/\d{4})Admiss[ãa]o/i);
+    if (admissaoM) { atual.admissao = admissaoM[1]; continue; }
+
+    const funcaoM = linha.match(/^Fun[çc][ãa]o\s*:\s*(.+)$/i);
+    if (funcaoM) { atual.funcao = funcaoM[1].trim(); continue; }
+
+    const quitacaoM = linha.match(/Quita[çc][ãa]o\s*:(\d{2}\/\d{2}\/\d{4})/i);
+    if (quitacaoM) { atual.quitacao = quitacaoM[1]; continue; }
+
+    // Linhas de rótulo (sem lançamento) — nunca terminam em valor monetário/dígitos de rubrica
+    if (/:\s*$/.test(linha) || /^\*+$/.test(linha) || /^Resumo do|^Recibo$|^TODOS$|^C[óo]digoNome/i.test(linha)) continue;
+
+    const lanc = cmoParseLinhaLancamento(linha);
+    if (lanc) atual.lancamentos.push(lanc);
+  }
+
+  return [...porCodigo.values()].map(f => {
+    const totalProventos = +f.lancamentos.filter(l => l.tipo === 'provento').reduce((s,l) => s + l.valor, 0).toFixed(2);
+    const totalDescontos = +f.lancamentos.filter(l => l.tipo === 'desconto').reduce((s,l) => s + l.valor, 0).toFixed(2);
+    return { ...f, totalProventos, totalDescontos, liquido: +(totalProventos - totalDescontos).toFixed(2) };
+  }).sort((a,b) => (a.funcao || '').localeCompare(b.funcao || '', 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
+function loadCmoExtras() {
+  try { return JSON.parse(fs.readFileSync(CMO_EXTRAS_FILE, 'utf8')); } catch { return {}; }
+}
+function saveCmoExtras(d) { fs.writeFileSync(CMO_EXTRAS_FILE, JSON.stringify(d, null, 2)); }
+function loadCmoExclusoes() {
+  try { return JSON.parse(fs.readFileSync(CMO_EXCLUSOES_FILE, 'utf8')); } catch { return {}; }
+}
+function saveCmoExclusoes(d) { fs.writeFileSync(CMO_EXCLUSOES_FILE, JSON.stringify(d, null, 2)); }
+
+const CMO_PERIODOS_DISPONIVEIS = ['2026-05', '2026-06'];
+
+app.get('/api/cmo/periodos', (req, res) => {
+  res.json({ periodos: CMO_PERIODOS_DISPONIVEIS });
+});
+
+app.get('/api/cmo/:mes', async (req, res) => {
+  try {
+    const mes = req.params.mes;
+    if (!CMO_PERIODOS_DISPONIVEIS.includes(mes)) return res.status(400).json({ error: `Período ${mes} não disponível.` });
+    const [ano, mm] = mes.split('-');
+    const nomeArquivo = `FOLHA PAGTO ${mm}${ano} - BACCO.pdf`;
+
+    const q = encodeURIComponent(`'${DP_FOLDER_ID}' in parents and trashed=false and name='${nomeArquivo}'`);
+    const d = await driveGet(`files?q=${q}&fields=files(id,name)&corpora=allDrives`);
+    const arquivo = d.files?.[0];
+    if (!arquivo) return res.status(404).json({ error: `Arquivo "${nomeArquivo}" não encontrado na pasta DP.` });
+
+    const buf = await downloadFile(arquivo.id);
+    const texto = await pdfParse(buf).then(r => r.text);
+    let funcionarios = parseFolhaPagamento(texto);
+
+    const exclusoes = new Set(loadCmoExclusoes()[mes] || []);
+    funcionarios = funcionarios.filter(f => !exclusoes.has(f.codigo));
+
+    const extras = (loadCmoExtras()[mes] || []).map(e => ({
+      codigo: e.id, nome: e.nome, funcao: 'FUNCIONÁRIOS EXTRAS', admissao: '', quitacao: '',
+      lancamentos: [{ descricao: e.observacao || 'Valor lançado manualmente', valor: e.valor, tipo: 'provento', codigoRubrica: '' }],
+      totalProventos: e.valor, totalDescontos: 0, liquido: e.valor, extra: true
+    }));
+
+    const todos = [...funcionarios, ...extras];
+    const porFuncao = {};
+    for (const f of todos) {
+      const chave = f.funcao || 'SEM FUNÇÃO';
+      if (!porFuncao[chave]) porFuncao[chave] = [];
+      porFuncao[chave].push(f);
+    }
+
+    const totais = todos.reduce((acc, f) => ({
+      proventos: acc.proventos + f.totalProventos,
+      descontos: acc.descontos + f.totalDescontos,
+      liquido: acc.liquido + f.liquido
+    }), { proventos: 0, descontos: 0, liquido: 0 });
+
+    res.json({
+      mes, arquivo: nomeArquivo,
+      totalFuncionarios: todos.length,
+      totais: { proventos: +totais.proventos.toFixed(2), descontos: +totais.descontos.toFixed(2), liquido: +totais.liquido.toFixed(2) },
+      porFuncao
+    });
+  } catch(e) { res.status(500).json({ error: e.message, stack: e.stack }); }
+});
+
+app.post('/api/cmo/extras', (req, res) => {
+  const { mes, nome, valor, observacao } = req.body;
+  if (!CMO_PERIODOS_DISPONIVEIS.includes(mes)) return res.status(400).json({ error: 'Período inválido.' });
+  const nomeLimpo = String(nome || '').trim();
+  const valorNum = +valor;
+  if (!nomeLimpo || !(valorNum > 0)) return res.status(400).json({ error: 'Nome e valor (> 0) são obrigatórios.' });
+
+  const extras = loadCmoExtras();
+  if (!extras[mes]) extras[mes] = [];
+  const item = { id: `extra-${Date.now()}`, nome: nomeLimpo, valor: valorNum, observacao: String(observacao || '') };
+  extras[mes].push(item);
+  saveCmoExtras(extras);
+  res.json({ ok: true, item });
+});
+
+app.post('/api/cmo/extras/remover', (req, res) => {
+  const { mes, id } = req.body;
+  const extras = loadCmoExtras();
+  if (extras[mes]) extras[mes] = extras[mes].filter(e => e.id !== id);
+  saveCmoExtras(extras);
+  res.json({ ok: true });
+});
+
+app.post('/api/cmo/excluir', (req, res) => {
+  const { mes, codigo, excluir } = req.body;
+  if (!CMO_PERIODOS_DISPONIVEIS.includes(mes)) return res.status(400).json({ error: 'Período inválido.' });
+  const exclusoes = loadCmoExclusoes();
+  if (!exclusoes[mes]) exclusoes[mes] = [];
+  const set = new Set(exclusoes[mes]);
+  if (excluir) set.add(codigo); else set.delete(codigo);
+  exclusoes[mes] = [...set];
+  saveCmoExclusoes(exclusoes);
+  res.json({ ok: true });
+});
+
 app.get('/api/debug-dp-arquivos', async (req, res) => {
   try {
     const q = encodeURIComponent(`'${DP_FOLDER_ID}' in parents and trashed=false`);
@@ -2483,6 +2647,7 @@ app.get('/concessionarias', (req, res) => res.sendFile(path.join(__dirname, 'pub
 app.get('/custos', (req, res) => res.sendFile(path.join(__dirname, 'public', 'custos.html')));
 app.get('/tripadvisor', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tripadvisor.html')));
 app.get('/bebidas', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bebidas.html')));
+app.get('/cmo', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cmo.html')));
 
 function comEstoqueFinal(it) {
   // vendas é negativo (saída), então soma normalmente
@@ -2509,6 +2674,29 @@ const CATALOGOS_BEBIDAS = {
   naoalcoolicas: { load: loadBebidasNaoAlc, save: saveBebidasNaoAlc }
 };
 
+// Correção pontual: o fechamento de julho/2026 rodou ANTES da lógica de taça existir, então o
+// histórico ficou sem os números de taça e o mês corrente (agosto) herdou o total antigo de julho.
+// Aplica uma única vez: recoloca os números reais de julho (vistos na tela antes do bug) no
+// snapshot congelado e zera o arquivo de taça corrente.
+(function corrigeTacaFechamentoJulho2026() {
+  const ID = 'corrige-taca-fechamento-2026-07';
+  let migracoes = { aplicadas: [] };
+  try { migracoes = JSON.parse(fs.readFileSync(BEBIDAS_MIGRACOES_FILE, 'utf8')); } catch {}
+  if (migracoes.aplicadas.includes(ID)) return;
+
+  const fechamentos = loadFechamentos();
+  const snap = fechamentos.vinhos?.['2026-07'];
+  if (snap) {
+    const itensSnap = Array.isArray(snap) ? snap : snap.itens;
+    fechamentos.vinhos['2026-07'] = { itens: itensSnap, tacaTinto: 68, tacaBranco: 18 };
+    saveFechamentos(fechamentos);
+  }
+  fs.writeFileSync(BEBIDAS_TACA_FILE, JSON.stringify({ tacaTinto: 0, tacaBranco: 0, atualizadoEm: new Date().toISOString() }, null, 2));
+
+  migracoes.aplicadas.push(ID);
+  fs.writeFileSync(BEBIDAS_MIGRACOES_FILE, JSON.stringify(migracoes, null, 2));
+})();
+
 app.get('/api/bebidas/periodos', (req, res) => {
   const fechamentos = loadFechamentos();
   const mesAtual = mesCorrenteBebidas();
@@ -2532,8 +2720,17 @@ app.post('/api/bebidas/fechar-mes', (req, res) => {
     if (fechamentos[cat][mes]) return res.status(409).json({ error: `O mês ${mes} já está fechado para ${cat}.` });
 
     const itens = load();
-    // Congela o estado atual (com estoqueFinal calculado) como o snapshot definitivo do mês
-    fechamentos[cat][mes] = itens.map(comEstoqueFinal);
+    const snapshotItens = itens.map(comEstoqueFinal);
+
+    if (cat === 'vinhos') {
+      // Vinhos também rastreia taças (arquivo separado) — precisa congelar E zerar aqui também,
+      // senão o histórico perde os números de taça e o mês novo herda o total do mês fechado.
+      const tacas = loadTacas();
+      fechamentos[cat][mes] = { itens: snapshotItens, tacaTinto: tacas.tacaTinto || 0, tacaBranco: tacas.tacaBranco || 0 };
+      fs.writeFileSync(BEBIDAS_TACA_FILE, JSON.stringify({ tacaTinto: 0, tacaBranco: 0, atualizadoEm: new Date().toISOString() }, null, 2));
+    } else {
+      fechamentos[cat][mes] = snapshotItens;
+    }
 
     // Rola o estoque para o novo mês: estoque final vira o inicial, zera vendas/entradas/auditoria
     for (const item of itens) {
@@ -2546,7 +2743,7 @@ app.post('/api/bebidas/fechar-mes', (req, res) => {
       item.observacao = '';
     }
     save(itens);
-    resultado[cat] = fechamentos[cat][mes].length;
+    resultado[cat] = snapshotItens.length;
   }
   saveFechamentos(fechamentos);
   avancarMesCorrenteBebidas(proximoMesKey(mes));
@@ -2564,7 +2761,8 @@ function criarEndpointAtualizarFechado(path, catKey, camposTexto) {
     const fechamentos = loadFechamentos();
     const snapshot = fechamentos[catKey]?.[mes];
     if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
-    const item = snapshot.find(i => i.codigo === codigo);
+    const itensSnap = Array.isArray(snapshot) ? snapshot : snapshot.itens;
+    const item = itensSnap.find(i => i.codigo === codigo);
     if (!item) return res.status(404).json({ error: 'Item não encontrado no fechamento.' });
     if (camposTexto.includes(campo)) {
       item[campo] = String(valor || '');
@@ -2583,7 +2781,10 @@ app.get('/api/bebidas/vinhos', (req, res) => {
     const fechamentos = loadFechamentos();
     const snapshot = fechamentos.vinhos?.[mes];
     if (!snapshot) return res.status(404).json({ error: `Nenhum fechamento encontrado para ${mes}.` });
-    return res.json({ itens: [...snapshot].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), tacaTinto: 0, tacaBranco: 0, fechado: true, mes });
+    const itensSnap = Array.isArray(snapshot) ? snapshot : snapshot.itens;
+    const tacaTinto = Array.isArray(snapshot) ? 0 : (snapshot.tacaTinto || 0);
+    const tacaBranco = Array.isArray(snapshot) ? 0 : (snapshot.tacaBranco || 0);
+    return res.json({ itens: [...itensSnap].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR')), tacaTinto, tacaBranco, fechado: true, mes });
   }
   const itens = loadVinhos().map(comEstoqueFinal).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const { tacaTinto, tacaBranco } = loadTacas();
